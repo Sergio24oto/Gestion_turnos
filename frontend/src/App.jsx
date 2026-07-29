@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import React from "react";
 import { api } from "./api";
 
@@ -30,6 +30,15 @@ function isOpenDay(iso) {
 
 function timeLabel(value) {
   return `${String(value).slice(0, 5)} hs.`;
+}
+
+function cancellationLink(token) {
+  return `${window.location.origin}/cancelar/${encodeURIComponent(token)}`;
+}
+
+function cancellationTokenFromPath() {
+  const match = window.location.pathname.match(/^\/cancelar\/([^/]+)\/?$/);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 function currentMinutesInArgentina() {
@@ -88,12 +97,17 @@ export default function App() {
   const [time, setTime] = useState(null);
   const [client, setClient] = useState({ first_name: "", last_name: "", phone: "" });
   const [booking, setBooking] = useState(null);
+  const [copyMessage, setCopyMessage] = useState("");
   const [error, setError] = useState("");
   const [token, setToken] = useState(localStorage.getItem("adminToken") || "");
   const [login, setLogin] = useState({ username: "admin", password: "" });
   const [adminDate, setAdminDate] = useState(firstOpenDate());
   const [agenda, setAgenda] = useState([]);
   const [manual, setManual] = useState(null);
+  const [cancelToken] = useState(cancellationTokenFromPath());
+  const [cancelAppointmentData, setCancelAppointmentData] = useState(null);
+  const [cancelStatus, setCancelStatus] = useState("loading");
+  const [cancelError, setCancelError] = useState("");
   const selectedService = services.find((item) => item.id === Number(serviceId));
   const visibleAvailable = useMemo(
     () => available.filter((slot) => isBookableSlot(date, slot)),
@@ -103,6 +117,20 @@ export default function App() {
   useEffect(() => {
     api.services().then(setServices).catch((err) => setError(err.message));
   }, []);
+
+  useEffect(() => {
+    if (!cancelToken) return;
+    api.cancellationDetails(cancelToken)
+      .then((data) => {
+        setCancelAppointmentData(data);
+        setCancelStatus("ready");
+        setCancelError("");
+      })
+      .catch((err) => {
+        setCancelStatus("error");
+        setCancelError(err.message);
+      });
+  }, [cancelToken]);
 
   useEffect(() => {
     if (step === "time" && date) {
@@ -139,6 +167,7 @@ export default function App() {
         client,
       });
       setBooking(saved);
+      setCopyMessage("");
       setStep("confirmation");
     } catch (err) {
       setError(err.message);
@@ -202,7 +231,92 @@ export default function App() {
     setTime(null);
     setClient({ first_name: "", last_name: "", phone: "" });
     setBooking(null);
+    setCopyMessage("");
     setError("");
+  }
+
+  async function copyCancellationLink() {
+    if (!booking?.cancellation_token) return;
+    const link = cancellationLink(booking.cancellation_token);
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(link);
+    }
+    setCopyMessage("Enlace copiado.");
+  }
+
+  function openCancellationLink() {
+    if (!booking?.cancellation_token) return;
+    window.open(cancellationLink(booking.cancellation_token), "_blank", "noopener,noreferrer");
+  }
+
+  async function confirmPublicCancellation() {
+    if (!cancelToken) return;
+    setCancelError("");
+    try {
+      await api.cancelByToken(cancelToken);
+      setCancelStatus("cancelled");
+    } catch (err) {
+      setCancelStatus("error");
+      setCancelError(err.message);
+    }
+  }
+
+  if (cancelToken) {
+    return (
+      <div className="shell">
+        <header className="topbar">
+          <button className="brand" onClick={() => { window.location.href = "/"; }} aria-label="Volver al inicio">
+            <span className="logo-slot"><img src="/marcelo-navarro-logo.png" alt="Marcelo Navarro Peluqueria Unisex" /></span>
+            <span><strong>Marcelo Navarro</strong><small>Turnos cada 20 min</small></span>
+          </button>
+        </header>
+
+        <main>
+          <section className="confirmation cancellation-page">
+            {cancelStatus === "loading" ? (
+              <>
+                <p className="eyebrow">Cancelación de turno</p>
+                <h2>Buscando tu turno</h2>
+              </>
+            ) : null}
+
+            {cancelStatus === "ready" && cancelAppointmentData ? (
+              <>
+                <p className="eyebrow">Cancelación de turno</p>
+                <h2>Confirmar cancelación</h2>
+                <Summary
+                  service={{ name: cancelAppointmentData.service_name }}
+                  date={cancelAppointmentData.date}
+                  time={cancelAppointmentData.start_time}
+                />
+                <p className="lead cancel-question">¿Estás seguro de que querés cancelar este turno?</p>
+                <div className="confirmation-actions">
+                  <button className="primary" onClick={confirmPublicCancellation}>Cancelar turno</button>
+                  <button className="ghost" onClick={() => { window.location.href = "/"; }}>Volver</button>
+                </div>
+              </>
+            ) : null}
+
+            {cancelStatus === "cancelled" ? (
+              <>
+                <div className="success-mark">OK</div>
+                <h2>Tu turno fue cancelado correctamente.</h2>
+                <p className="lead cancel-question">El horario fue liberado para que otra persona pueda reservarlo.</p>
+                <button className="primary" onClick={() => { window.location.href = "/"; }}>Volver</button>
+              </>
+            ) : null}
+
+            {cancelStatus === "error" ? (
+              <>
+                <p className="eyebrow">Cancelación de turno</p>
+                <h2>{cancelError === "El turno ya fue cancelado." ? "Este turno ya fue cancelado." : "El enlace de cancelación no es válido o ya no está disponible."}</h2>
+                <button className="primary" onClick={() => { window.location.href = "/"; }}>Volver</button>
+              </>
+            ) : null}
+          </section>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -228,12 +342,12 @@ export default function App() {
                 <div className="logo-large"><img src="/marcelo-navarro-logo.png" alt="Marcelo Navarro Peluqueria Unisex" /></div>
                 <p className="eyebrow">Agenda online</p>
                 <h1>Reserva tu proximo corte sin esperar mensajes.</h1>
-                <p className="lead">Elegí servicio, fecha y horario disponible. Sin cuenta y en pocos pasos.</p>
+                <p className="lead">ElegÃ­ servicio, fecha y horario disponible. Sin cuenta y en pocos pasos.</p>
                 <button className="primary cta" onClick={() => setStep("service")}>Reservar turno</button>
               </div>
               <aside className="phone-preview" aria-label="Vista previa de turnos disponibles">
                 <p>TURNOS DISPONIBLES</p>
-                <h2>Miércoles 25 de septiembre</h2>
+                <h2>MiÃ©rcoles 25 de septiembre</h2>
                 <div className="preview-times">
                   <span>09:00 hs.</span><span>09:20 hs.</span><span>09:40 hs.</span>
                   <span>10:00 hs.</span><span>10:20 hs.</span><span>10:40 hs.</span>
@@ -244,7 +358,7 @@ export default function App() {
 
           {step === "service" && (
             <section className="panel">
-              <div className="step-head"><p className="eyebrow">Paso 1</p><h2>Elegí el servicio</h2></div>
+              <div className="step-head"><p className="eyebrow">Paso 1</p><h2>ElegÃ­ el servicio</h2></div>
               <div className="service-grid">
                 {services.map((service) => (
                   <button key={service.id} className={`service-card ${serviceId === service.id ? "selected" : ""}`} onClick={() => { setServiceId(service.id); setStep("date"); }}>
@@ -258,8 +372,8 @@ export default function App() {
           {step === "date" && (
             <section className="panel">
               <div className="step-head">
-                <p className="eyebrow">Paso 2</p><h2>Seleccioná una fecha</h2>
-                <p>Solo martes a sábado. No se permiten fechas pasadas.</p>
+                <p className="eyebrow">Paso 2</p><h2>SeleccionÃ¡ una fecha</h2>
+                <p>Solo martes a sÃ¡bado. No se permiten fechas pasadas.</p>
               </div>
               <div className="date-grid">
                 {dateOptions().map((iso) => {
@@ -308,6 +422,16 @@ export default function App() {
               <div className="success-mark">OK</div>
               <h2>Tu turno fue reservado correctamente</h2>
               <Summary service={selectedService} date={booking.date} time={booking.start_time} customer={`${booking.client_first_name} ${booking.client_last_name}`} />
+              {booking.cancellation_token ? (
+                <div className="cancel-link-box">
+                  <p>Guardá este enlace por si necesitás cancelar tu turno.</p>
+                  <div className="confirmation-actions">
+                    <button className="ghost" onClick={copyCancellationLink}>Copiar enlace</button>
+                    <button className="primary" onClick={openCancellationLink}>Abrir enlace</button>
+                  </div>
+                  {copyMessage ? <span className="copy-message">{copyMessage}</span> : null}
+                </div>
+              ) : null}
               <button className="primary" onClick={resetClient}>Finalizar</button>
             </section>
           )}
@@ -319,8 +443,8 @@ export default function App() {
               <div><p className="eyebrow">Panel privado</p><h2>Ingresar como peluquero</h2><p>Usuario demo: <strong>admin</strong></p></div>
               <form className="form-grid compact" onSubmit={submitLogin}>
                 <label>Usuario<input required value={login.username} onChange={(e) => setLogin({ ...login, username: e.target.value })} /></label>
-                <label>Contraseña<input required type="password" value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} /></label>
-                <button className="primary" type="submit">Iniciar sesión</button>
+                <label>ContraseÃ±a<input required type="password" value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} /></label>
+                <button className="primary" type="submit">Iniciar sesiÃ³n</button>
               </form>
             </section>
           ) : (
@@ -363,7 +487,7 @@ export default function App() {
       {manual ? (
         <div className="modal-layer">
           <form className="dialog-card" onSubmit={submitManual}>
-            <div><p className="eyebrow">Registrar turno manual</p><h3>{formatDate(adminDate)} · {timeLabel(manual.time)}</h3></div>
+            <div><p className="eyebrow">Registrar turno manual</p><h3>{formatDate(adminDate)} Â· {timeLabel(manual.time)}</h3></div>
             <label>Nombre<input required value={manual.first_name} onChange={(e) => setManual({ ...manual, first_name: e.target.value })} /></label>
             <label>Apellido<input value={manual.last_name} onChange={(e) => setManual({ ...manual, last_name: e.target.value })} /></label>
             <label>Telefono <span>opcional</span><input value={manual.phone} onChange={(e) => setManual({ ...manual, phone: e.target.value })} /></label>
@@ -375,3 +499,5 @@ export default function App() {
     </div>
   );
 }
+
+

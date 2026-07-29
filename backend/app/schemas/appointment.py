@@ -34,6 +34,19 @@ class AppointmentRead(BaseModel):
     client_phone: str
 
 
+class PublicAppointmentCreated(AppointmentRead):
+    cancellation_token: str
+
+
+class PublicCancellationAppointment(BaseModel):
+    date: date
+    start_time: time
+    status: str
+    service_name: str
+    client_first_name: str
+    client_last_name: str
+
+
 class AgendaSlot(BaseModel):
     time: time
     status: str

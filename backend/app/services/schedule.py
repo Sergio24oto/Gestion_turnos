@@ -1,4 +1,6 @@
 from datetime import date, datetime, time, timedelta, timezone
+from hashlib import sha256
+from secrets import token_urlsafe
 from zoneinfo import ZoneInfo
 from zoneinfo._common import ZoneInfoNotFoundError
 
@@ -10,7 +12,7 @@ from ..models.appointment import Appointment
 from ..models.block import BlockedSlot
 from ..models.client import Client
 from ..models.service import Service
-from ..schemas.appointment import AgendaSlot, AppointmentCreate, AppointmentRead
+from ..schemas.appointment import AgendaSlot, AppointmentCreate, AppointmentRead, PublicCancellationAppointment
 from ..schemas.block import BlockCreate
 
 OPEN_RANGES = ((time(9, 0), time(13, 0)), (time(17, 0), time(21, 0)))
@@ -48,6 +50,10 @@ def is_future_slot(slot_date: date, slot_time: time) -> bool:
     return slot_datetime(slot_date, slot_time) >= minimum_start
 
 
+def is_past_slot(slot_date: date, slot_time: time) -> bool:
+    return slot_datetime(slot_date, slot_time) < now_in_argentina()
+
+
 def validate_slot(slot_date: date, slot_time: time) -> None:
     if slot_date.weekday() not in (1, 2, 3, 4, 5):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Solo se permiten turnos de martes a sabado.")
@@ -74,6 +80,31 @@ def appointment_to_read(appointment: Appointment) -> AppointmentRead:
         client_last_name=appointment.client.last_name,
         client_phone=appointment.client.phone,
     )
+
+
+def appointment_to_public_cancellation(appointment: Appointment) -> PublicCancellationAppointment:
+    return PublicCancellationAppointment(
+        date=appointment.date,
+        start_time=appointment.start_time,
+        status=appointment.status,
+        service_name=appointment.service.name,
+        client_first_name=appointment.client.first_name,
+        client_last_name=appointment.client.last_name,
+    )
+
+
+def hash_cancellation_token(token: str) -> str:
+    return sha256(token.encode("utf-8")).hexdigest()
+
+
+def generate_unique_cancellation_token(db: Session) -> tuple[str, str]:
+    for _ in range(5):
+        token = token_urlsafe(32)
+        token_hash = hash_cancellation_token(token)
+        exists = db.scalar(select(Appointment.id).where(Appointment.cancellation_token_hash == token_hash))
+        if not exists:
+            return token, token_hash
+    raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "No se pudo generar el token de cancelacion.")
 
 
 def occupied_appointment(db: Session, slot_date: date, slot_time: time) -> Appointment | None:
@@ -118,6 +149,7 @@ def create_appointment(db: Session, payload: AppointmentCreate, origin: str) -> 
         last_name=payload.client.last_name.strip(),
         phone=payload.client.phone.strip(),
     )
+    cancellation_token, cancellation_token_hash = generate_unique_cancellation_token(db)
     appointment = Appointment(
         client=client,
         service=service,
@@ -125,7 +157,9 @@ def create_appointment(db: Session, payload: AppointmentCreate, origin: str) -> 
         start_time=payload.start_time,
         status="Confirmado",
         origin=origin,
+        cancellation_token_hash=cancellation_token_hash,
     )
+    appointment._cancellation_token = cancellation_token
     db.add(appointment)
     try:
         db.commit()
@@ -133,6 +167,7 @@ def create_appointment(db: Session, payload: AppointmentCreate, origin: str) -> 
         db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, "El horario ya fue reservado.")
     db.refresh(appointment)
+    appointment._cancellation_token = cancellation_token
     return appointment
 
 
@@ -140,6 +175,27 @@ def cancel_appointment(db: Session, appointment_id: int) -> Appointment:
     appointment = db.get(Appointment, appointment_id)
     if not appointment:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Turno no encontrado.")
+    appointment.status = "Cancelado"
+    db.commit()
+    db.refresh(appointment)
+    return appointment
+
+
+def appointment_by_cancellation_token(db: Session, token: str) -> Appointment:
+    appointment = db.scalar(
+        select(Appointment).where(Appointment.cancellation_token_hash == hash_cancellation_token(token))
+    )
+    if not appointment:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Token de cancelacion invalido.")
+    if appointment.status == "Cancelado":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "El turno ya fue cancelado.")
+    if is_past_slot(appointment.date, appointment.start_time):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No se puede cancelar un turno pasado.")
+    return appointment
+
+
+def cancel_appointment_by_token(db: Session, token: str) -> Appointment:
+    appointment = appointment_by_cancellation_token(db, token)
     appointment.status = "Cancelado"
     db.commit()
     db.refresh(appointment)

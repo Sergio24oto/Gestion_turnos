@@ -5,11 +5,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
 
-
 class Appointment(Base):
     __tablename__ = "turnos"
     __table_args__ = (
         Index("uq_turnos_fecha_hora_activo", "fecha_activa", "hora_activa", unique=True),
+        Index("uq_turnos_cancelacion_token_hash", "cancelacion_token_hash", unique=True),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -29,6 +29,11 @@ class Appointment(Base):
         nullable=False,
         default="APP",
     )
+    cancellation_token_hash: Mapped[str] = mapped_column(
+        "cancelacion_token_hash",
+        String(64),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column("creado_en", DateTime, server_default=func.now(), nullable=False)
     active_date: Mapped[date] = mapped_column(
         "fecha_activa",
@@ -45,3 +50,5 @@ class Appointment(Base):
 
     client = relationship("Client")
     service = relationship("Service")
+
+

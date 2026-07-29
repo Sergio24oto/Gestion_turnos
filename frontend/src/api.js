@@ -30,6 +30,9 @@ export const api = {
   agenda: (date) => request(`/appointments/agenda?date_=${date}`),
   createManualAppointment: (payload) => request("/appointments/manual", { method: "POST", body: JSON.stringify(payload) }),
   cancelAppointment: (id) => request(`/appointments/${id}/cancel`, { method: "PATCH" }),
+  cancellationDetails: (token) => request(`/appointments/cancel/${encodeURIComponent(token)}`),
+  cancelByToken: (token) => request(`/appointments/cancel/${encodeURIComponent(token)}`, { method: "PATCH" }),
   blockSlot: (payload) => request("/blocks", { method: "POST", body: JSON.stringify(payload) }),
   unblockSlot: (id) => request(`/blocks/${id}`, { method: "DELETE" }),
 };
+
