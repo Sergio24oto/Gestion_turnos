@@ -4,6 +4,21 @@ import { api } from "./api";
 
 const TZ = "America/Argentina/Cordoba";
 const MIN_BOOKING_NOTICE_MINUTES = 20;
+const ANY_BARBER = "any";
+const ALL_BARBERS = "all";
+
+const BARBER_VISUALS = {
+  marcelo: {
+    name: "Marcelo Navarro",
+    description: "Cortes clásicos, barba y atención unisex.",
+    photo_url: "/barbers/marcelo.jpeg",
+  },
+  jeremias: {
+    name: "Jeremías Vivas",
+    description: "Atención unisex, cortes actuales y turnos de apoyo.",
+    photo_url: "/barbers/jeremias.jpeg",
+  },
+};
 
 function todayISO() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
@@ -76,9 +91,75 @@ function firstOpenDate() {
   return dateOptions().find(isOpenDay) || todayISO();
 }
 
-function Summary({ service, date, time, customer }) {
+function initials(name) {
+  return String(name || "?")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+}
+
+function normalizeBarber(barber) {
+  const originalName = barber?.name || barber?.barber_name || "";
+  const isJeremias = Number(barber?.id || barber?.barber_id) === 2 || originalName.includes("Equipo") || originalName.includes("Jerem");
+  const visual = isJeremias ? BARBER_VISUALS.jeremias : BARBER_VISUALS.marcelo;
+  return {
+    ...barber,
+    name: visual.name,
+    barber_name: visual.name,
+    description: visual.description,
+    photo_url: visual.photo_url,
+  };
+}
+
+function normalizeBarberName(name) {
+  if (!name) return "-";
+  if (name.includes("Equipo") || name.includes("Jerem")) return BARBER_VISUALS.jeremias.name;
+  return BARBER_VISUALS.marcelo.name;
+}
+
+function barberById(barbers, barberId) {
+  return barbers.find((item) => item.id === Number(barberId));
+}
+
+function selectedBarberName(barbers, barberId) {
+  if (barberId === ANY_BARBER) return "Sin preferencia";
+  return barberById(barbers, barberId)?.name || "-";
+}
+
+function BarberAvatar({ barber, name, size = "sm" }) {
+  const displayName = barber?.name || normalizeBarberName(name);
+  const photoUrl = barber?.photo_url || (displayName.includes("Jerem") ? BARBER_VISUALS.jeremias.photo_url : BARBER_VISUALS.marcelo.photo_url);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [photoUrl]);
+
+  return (
+    <span className={`barber-avatar ${size}`} aria-label={displayName}>
+      {!failed && photoUrl ? <img src={photoUrl} alt={displayName} onError={() => setFailed(true)} /> : <span>{initials(displayName)}</span>}
+    </span>
+  );
+}
+
+function BarberLabel({ barber, name }) {
+  const displayName = barber?.name || normalizeBarberName(name);
+  return (
+    <span className="barber-label">
+      <BarberAvatar barber={barber} name={displayName} />
+      <span>{displayName}</span>
+    </span>
+  );
+}
+
+function Summary({ barber, service, date, time, customer }) {
+  const barberName = barber ? normalizeBarberName(barber) : "";
   return (
     <div className="summary">
+      {barber ? <div><span>Peluquero</span><strong><BarberLabel name={barberName} /></strong></div> : null}
       <div><span>Servicio</span><strong>{service?.name || "-"}</strong></div>
       <div><span>Fecha</span><strong>{date ? formatDate(date) : "-"}</strong></div>
       <div><span>Hora</span><strong>{time ? timeLabel(time) : "-"}</strong></div>
@@ -90,7 +171,9 @@ function Summary({ service, date, time, customer }) {
 export default function App() {
   const [view, setView] = useState("client");
   const [step, setStep] = useState("welcome");
+  const [barbers, setBarbers] = useState([]);
   const [services, setServices] = useState([]);
+  const [barberId, setBarberId] = useState(null);
   const [serviceId, setServiceId] = useState(null);
   const [date, setDate] = useState(firstOpenDate());
   const [available, setAvailable] = useState([]);
@@ -102,6 +185,7 @@ export default function App() {
   const [token, setToken] = useState(localStorage.getItem("adminToken") || "");
   const [login, setLogin] = useState({ username: "admin", password: "" });
   const [adminDate, setAdminDate] = useState(firstOpenDate());
+  const [adminBarberTab, setAdminBarberTab] = useState(null);
   const [agenda, setAgenda] = useState([]);
   const [manual, setManual] = useState(null);
   const [cancelToken] = useState(cancellationTokenFromPath());
@@ -109,20 +193,34 @@ export default function App() {
   const [cancelStatus, setCancelStatus] = useState("loading");
   const [cancelError, setCancelError] = useState("");
   const selectedService = services.find((item) => item.id === Number(serviceId));
+  const currentBarberName = selectedBarberName(barbers, barberId);
   const visibleAvailable = useMemo(
     () => available.filter((slot) => isBookableSlot(date, slot)),
     [available, date]
   );
+  const visibleAgenda = useMemo(
+    () => adminBarberTab === ALL_BARBERS ? agenda : agenda.filter((slot) => slot.barber_id === Number(adminBarberTab)),
+    [agenda, adminBarberTab]
+  );
+  const groupedAgenda = useMemo(
+    () => barbers.map((barber) => ({ barber, slots: agenda.filter((slot) => slot.barber_id === barber.id) })),
+    [agenda, barbers]
+  );
 
   useEffect(() => {
     api.services().then(setServices).catch((err) => setError(err.message));
+    api.barbers().then((items) => setBarbers(items.map(normalizeBarber))).catch((err) => setError(err.message));
   }, []);
+
+  useEffect(() => {
+    if (!adminBarberTab && barbers.length) setAdminBarberTab(String(barbers[0].id));
+  }, [adminBarberTab, barbers]);
 
   useEffect(() => {
     if (!cancelToken) return;
     api.cancellationDetails(cancelToken)
       .then((data) => {
-        setCancelAppointmentData(data);
+        setCancelAppointmentData({ ...data, barber_name: normalizeBarberName(data.barber_name) });
         setCancelStatus("ready");
         setCancelError("");
       })
@@ -134,23 +232,28 @@ export default function App() {
 
   useEffect(() => {
     if (step === "time" && date) {
-      api.availability(date).then(setAvailable).catch((err) => setError(err.message));
+      const queryBarber = barberId === ANY_BARBER ? null : barberId;
+      api.availability(date, queryBarber).then(setAvailable).catch((err) => setError(err.message));
     }
-  }, [step, date]);
+  }, [step, date, barberId]);
 
   useEffect(() => {
     if (view === "admin" && token) refreshAgenda();
   }, [view, token, adminDate]);
 
   const stats = useMemo(() => ({
-    free: agenda.filter((slot) => slot.status === "Libre").length,
-    booked: agenda.filter((slot) => slot.status === "Reservado").length,
-    blocked: agenda.filter((slot) => slot.status === "Bloqueado").length,
-  }), [agenda]);
+    free: visibleAgenda.filter((slot) => slot.status === "Libre").length,
+    booked: visibleAgenda.filter((slot) => slot.status === "Reservado").length,
+    blocked: visibleAgenda.filter((slot) => slot.status === "Bloqueado").length,
+  }), [visibleAgenda]);
 
   async function refreshAgenda() {
     try {
-      setAgenda(await api.agenda(adminDate));
+      setAgenda((await api.agenda(adminDate)).map((slot) => ({
+        ...slot,
+        barber_name: normalizeBarberName(slot.barber_name),
+        appointment: slot.appointment ? { ...slot.appointment, barber_name: normalizeBarberName(slot.appointment.barber_name) } : slot.appointment,
+      })));
     } catch (err) {
       setError(err.message);
     }
@@ -161,18 +264,20 @@ export default function App() {
     setError("");
     try {
       const saved = await api.createAppointment({
+        barber_id: barberId === ANY_BARBER ? null : Number(barberId),
         service_id: Number(serviceId),
         date,
         start_time: time,
         client,
       });
-      setBooking(saved);
+      setBooking({ ...saved, barber_name: normalizeBarberName(saved.barber_name) });
       setCopyMessage("");
       setStep("confirmation");
     } catch (err) {
       setError(err.message);
       setStep("time");
-      api.availability(date).then(setAvailable);
+      const queryBarber = barberId === ANY_BARBER ? null : barberId;
+      api.availability(date, queryBarber).then(setAvailable);
     }
   }
 
@@ -194,6 +299,7 @@ export default function App() {
     setError("");
     try {
       await api.createManualAppointment({
+        barber_id: Number(manual.barber_id),
         service_id: Number(manual.service_id),
         date: adminDate,
         start_time: manual.time,
@@ -227,6 +333,7 @@ export default function App() {
 
   function resetClient() {
     setStep("welcome");
+    setBarberId(null);
     setServiceId(null);
     setTime(null);
     setClient({ first_name: "", last_name: "", phone: "" });
@@ -261,6 +368,26 @@ export default function App() {
     }
   }
 
+  function renderAgendaRows(slots) {
+    return slots.map((slot) => {
+      const barber = barberById(barbers, slot.barber_id);
+      return (
+        <div key={`${slot.barber_id}-${slot.time}`} className={`agenda-row ${slot.status === "Libre" ? "free" : slot.status === "Bloqueado" ? "blocked" : "booked"}`}>
+          <strong>{String(slot.time).slice(0, 5)}</strong>
+          <span><BarberLabel barber={barber} name={slot.barber_name} /></span>
+          <span>{slot.appointment ? `${slot.appointment.client_first_name} ${slot.appointment.client_last_name}` : slot.status === "Bloqueado" ? "Horario bloqueado" : "Disponible"}</span>
+          <span>{slot.appointment?.service_name || "-"}</span>
+          <span className={`status ${slot.status === "Libre" ? "free" : slot.status === "Bloqueado" ? "blocked" : "booked"}`}>{slot.appointment?.origin === "MANUAL" ? "Registrado manualmente" : slot.status}</span>
+          <div className="row-actions">
+            {slot.status === "Libre" && <><button onClick={() => setManual({ time: slot.time, barber_id: slot.barber_id, service_id: services[0]?.id || "", first_name: "", last_name: "", phone: "" })}>Registrar</button><button onClick={() => blockSlot(slot)}>Bloquear</button></>}
+            {slot.status === "Reservado" && <button onClick={() => cancelAppointment(slot)}>Cancelar</button>}
+            {slot.status === "Bloqueado" && <button onClick={() => unblockSlot(slot)}>Desbloquear</button>}
+          </div>
+        </div>
+      );
+    });
+  }
+
   if (cancelToken) {
     return (
       <div className="shell">
@@ -285,6 +412,7 @@ export default function App() {
                 <p className="eyebrow">Cancelación de turno</p>
                 <h2>Confirmar cancelación</h2>
                 <Summary
+                  barber={cancelAppointmentData.barber_name}
                   service={{ name: cancelAppointmentData.service_name }}
                   date={cancelAppointmentData.date}
                   time={cancelAppointmentData.start_time}
@@ -341,13 +469,13 @@ export default function App() {
               <div className="hero-copy">
                 <div className="logo-large"><img src="/marcelo-navarro-logo.png" alt="Marcelo Navarro Peluqueria Unisex" /></div>
                 <p className="eyebrow">Agenda online</p>
-                <h1>Reserva tu proximo corte sin esperar mensajes.</h1>
-                <p className="lead">ElegÃ­ servicio, fecha y horario disponible. Sin cuenta y en pocos pasos.</p>
-                <button className="primary cta" onClick={() => setStep("service")}>Reservar turno</button>
+                <h1>Reserva tu próximo corte sin esperar mensajes.</h1>
+                <p className="lead">Elegí peluquero, servicio, fecha y horario disponible. Sin cuenta y en pocos pasos.</p>
+                <button className="primary cta" onClick={() => setStep("barber")}>Reservar turno</button>
               </div>
               <aside className="phone-preview" aria-label="Vista previa de turnos disponibles">
                 <p>TURNOS DISPONIBLES</p>
-                <h2>MiÃ©rcoles 25 de septiembre</h2>
+                <h2>Miércoles 25 de septiembre</h2>
                 <div className="preview-times">
                   <span>09:00 hs.</span><span>09:20 hs.</span><span>09:40 hs.</span>
                   <span>10:00 hs.</span><span>10:20 hs.</span><span>10:40 hs.</span>
@@ -356,9 +484,35 @@ export default function App() {
             </section>
           )}
 
+          {step === "barber" && (
+            <section className="panel">
+              <div className="step-head"><p className="eyebrow">Paso 1</p><h2>Elegí tu peluquero</h2></div>
+              <div className="barber-grid">
+                {barbers.map((barber) => (
+                  <article key={barber.id} className={`barber-card ${Number(barberId) === barber.id ? "selected" : ""}`}>
+                    <BarberAvatar barber={barber} size="lg" />
+                    <div>
+                      <strong>{barber.name}</strong>
+                      <span>{barber.description}</span>
+                    </div>
+                    <button className="primary" onClick={() => { setBarberId(barber.id); setStep("service"); }}>Elegir</button>
+                  </article>
+                ))}
+                <article className={`barber-card ${barberId === ANY_BARBER ? "selected" : ""}`}>
+                  <span className="any-avatar lg">SP</span>
+                  <div>
+                    <strong>Sin preferencia</strong>
+                    <span>Asignamos automáticamente un peluquero disponible.</span>
+                  </div>
+                  <button className="primary" onClick={() => { setBarberId(ANY_BARBER); setStep("service"); }}>Elegir</button>
+                </article>
+              </div>
+            </section>
+          )}
+
           {step === "service" && (
             <section className="panel">
-              <div className="step-head"><p className="eyebrow">Paso 1</p><h2>ElegÃ­ el servicio</h2></div>
+              <div className="step-head"><p className="eyebrow">Paso 2</p><h2>Elegí el servicio</h2><p>Peluquero: <strong>{currentBarberName}</strong></p></div>
               <div className="service-grid">
                 {services.map((service) => (
                   <button key={service.id} className={`service-card ${serviceId === service.id ? "selected" : ""}`} onClick={() => { setServiceId(service.id); setStep("date"); }}>
@@ -372,8 +526,8 @@ export default function App() {
           {step === "date" && (
             <section className="panel">
               <div className="step-head">
-                <p className="eyebrow">Paso 2</p><h2>SeleccionÃ¡ una fecha</h2>
-                <p>Solo martes a sÃ¡bado. No se permiten fechas pasadas.</p>
+                <p className="eyebrow">Paso 3</p><h2>Seleccioná una fecha</h2>
+                <p>Solo martes a sábado. No se permiten fechas pasadas.</p>
               </div>
               <div className="date-grid">
                 {dateOptions().map((iso) => {
@@ -393,7 +547,7 @@ export default function App() {
           {step === "time" && (
             <section className="panel">
               <div className="availability-header">
-                <div><p className="eyebrow">TURNOS DISPONIBLES</p><h2>{formatDate(date)}</h2></div>
+                <div><p className="eyebrow">TURNOS DISPONIBLES</p><h2>{formatDate(date)}</h2><p>Peluquero: <strong>{currentBarberName}</strong></p></div>
                 <button className="ghost" onClick={() => setStep("date")}>Cambiar fecha</button>
               </div>
               {visibleAvailable.length ? (
@@ -406,12 +560,12 @@ export default function App() {
 
           {step === "details" && (
             <section className="panel">
-              <div className="step-head"><p className="eyebrow">Paso 4</p><h2>Tus datos</h2></div>
+              <div className="step-head"><p className="eyebrow">Paso 5</p><h2>Tus datos</h2></div>
               <form className="form-grid" onSubmit={submitBooking}>
                 <label>Nombre<input required value={client.first_name} onChange={(e) => setClient({ ...client, first_name: e.target.value })} /></label>
                 <label>Apellido<input required value={client.last_name} onChange={(e) => setClient({ ...client, last_name: e.target.value })} /></label>
-                <label>Telefono o WhatsApp<input required value={client.phone} onChange={(e) => setClient({ ...client, phone: e.target.value })} /></label>
-                <Summary service={selectedService} date={date} time={time} customer={`${client.first_name} ${client.last_name}`.trim()} />
+                <label>Teléfono o WhatsApp<input required value={client.phone} onChange={(e) => setClient({ ...client, phone: e.target.value })} /></label>
+                <Summary barber={currentBarberName} service={selectedService} date={date} time={time} customer={`${client.first_name} ${client.last_name}`.trim()} />
                 <button className="primary" type="submit">Confirmar turno</button>
               </form>
             </section>
@@ -421,7 +575,7 @@ export default function App() {
             <section className="confirmation">
               <div className="success-mark">OK</div>
               <h2>Tu turno fue reservado correctamente</h2>
-              <Summary service={selectedService} date={booking.date} time={booking.start_time} customer={`${booking.client_first_name} ${booking.client_last_name}`} />
+              <Summary barber={booking.barber_name} service={{ name: booking.service_name }} date={booking.date} time={booking.start_time} customer={`${booking.client_first_name} ${booking.client_last_name}`} />
               {booking.cancellation_token ? (
                 <div className="cancel-link-box">
                   <p>Guardá este enlace por si necesitás cancelar tu turno.</p>
@@ -443,8 +597,8 @@ export default function App() {
               <div><p className="eyebrow">Panel privado</p><h2>Ingresar como peluquero</h2><p>Usuario demo: <strong>admin</strong></p></div>
               <form className="form-grid compact" onSubmit={submitLogin}>
                 <label>Usuario<input required value={login.username} onChange={(e) => setLogin({ ...login, username: e.target.value })} /></label>
-                <label>ContraseÃ±a<input required type="password" value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} /></label>
-                <button className="primary" type="submit">Iniciar sesiÃ³n</button>
+                <label>Contraseña<input required type="password" value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} /></label>
+                <button className="primary" type="submit">Iniciar sesión</button>
               </form>
             </section>
           ) : (
@@ -461,24 +615,36 @@ export default function App() {
                 <span><strong>{stats.booked}</strong> reservados</span>
                 <span><strong>{stats.blocked}</strong> bloqueados</span>
               </div>
-              <div className="agenda-wrap">
-                <div className="agenda-head"><span>Hora</span><span>Cliente</span><span>Servicio</span><span>Estado</span><span>Acciones</span></div>
-                <div className="agenda-rows">
-                  {agenda.map((slot) => (
-                    <div key={slot.time} className={`agenda-row ${slot.status === "Libre" ? "free" : slot.status === "Bloqueado" ? "blocked" : "booked"}`}>
-                      <strong>{String(slot.time).slice(0, 5)}</strong>
-                      <span>{slot.appointment ? `${slot.appointment.client_first_name} ${slot.appointment.client_last_name}` : slot.status === "Bloqueado" ? "Horario bloqueado" : "Disponible"}</span>
-                      <span>{slot.appointment?.service_name || "-"}</span>
-                      <span className={`status ${slot.status === "Libre" ? "free" : slot.status === "Bloqueado" ? "blocked" : "booked"}`}>{slot.appointment?.origin === "MANUAL" ? "Registrado manualmente" : slot.status}</span>
-                      <div className="row-actions">
-                        {slot.status === "Libre" && <><button onClick={() => setManual({ time: slot.time, service_id: services[0]?.id || "", first_name: "", last_name: "", phone: "" })}>Registrar</button><button onClick={() => blockSlot(slot)}>Bloquear</button></>}
-                        {slot.status === "Reservado" && <button onClick={() => cancelAppointment(slot)}>Cancelar</button>}
-                        {slot.status === "Bloqueado" && <button onClick={() => unblockSlot(slot)}>Desbloquear</button>}
+              <div className="admin-tabs" role="tablist" aria-label="Peluqueros">
+                {barbers.map((barber) => (
+                  <button key={barber.id} className={`admin-tab ${adminBarberTab === String(barber.id) ? "active" : ""}`} onClick={() => setAdminBarberTab(String(barber.id))}>
+                    <BarberAvatar barber={barber} />
+                    <span>{barber.name}</span>
+                  </button>
+                ))}
+                <button className={`admin-tab ${adminBarberTab === ALL_BARBERS ? "active" : ""}`} onClick={() => setAdminBarberTab(ALL_BARBERS)}>
+                  <span className="any-avatar sm">T</span>
+                  <span>Todos</span>
+                </button>
+              </div>
+              {adminBarberTab === ALL_BARBERS ? (
+                <div className="agenda-groups">
+                  {groupedAgenda.map(({ barber, slots }) => (
+                    <section key={barber.id} className="agenda-group">
+                      <h3><BarberLabel barber={barber} /></h3>
+                      <div className="agenda-wrap">
+                        <div className="agenda-head"><span>Hora</span><span>Peluquero</span><span>Cliente</span><span>Servicio</span><span>Estado</span><span>Acciones</span></div>
+                        <div className="agenda-rows">{renderAgendaRows(slots)}</div>
                       </div>
-                    </div>
+                    </section>
                   ))}
                 </div>
-              </div>
+              ) : (
+                <div className="agenda-wrap">
+                  <div className="agenda-head"><span>Hora</span><span>Peluquero</span><span>Cliente</span><span>Servicio</span><span>Estado</span><span>Acciones</span></div>
+                  <div className="agenda-rows">{renderAgendaRows(visibleAgenda)}</div>
+                </div>
+              )}
             </section>
           )}
         </main>
@@ -487,10 +653,11 @@ export default function App() {
       {manual ? (
         <div className="modal-layer">
           <form className="dialog-card" onSubmit={submitManual}>
-            <div><p className="eyebrow">Registrar turno manual</p><h3>{formatDate(adminDate)} Â· {timeLabel(manual.time)}</h3></div>
+            <div><p className="eyebrow">Registrar turno manual</p><h3>{formatDate(adminDate)} · {timeLabel(manual.time)}</h3></div>
+            <label>Peluquero<select value={manual.barber_id} onChange={(e) => setManual({ ...manual, barber_id: e.target.value })}>{barbers.map((barber) => <option key={barber.id} value={barber.id}>{barber.name}</option>)}</select></label>
             <label>Nombre<input required value={manual.first_name} onChange={(e) => setManual({ ...manual, first_name: e.target.value })} /></label>
             <label>Apellido<input value={manual.last_name} onChange={(e) => setManual({ ...manual, last_name: e.target.value })} /></label>
-            <label>Telefono <span>opcional</span><input value={manual.phone} onChange={(e) => setManual({ ...manual, phone: e.target.value })} /></label>
+            <label>Teléfono <span>opcional</span><input value={manual.phone} onChange={(e) => setManual({ ...manual, phone: e.target.value })} /></label>
             <label>Servicio<select value={manual.service_id} onChange={(e) => setManual({ ...manual, service_id: e.target.value })}>{services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
             <menu><button type="button" className="ghost" onClick={() => setManual(null)}>Cerrar</button><button className="primary" type="submit">Guardar</button></menu>
           </form>
@@ -499,5 +666,3 @@ export default function App() {
     </div>
   );
 }
-
-

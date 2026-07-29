@@ -1,4 +1,4 @@
-from datetime import date, time
+﻿from datetime import date, time
 
 from pydantic import BaseModel, Field
 
@@ -11,6 +11,7 @@ class ClientInput(BaseModel):
 
 class AppointmentCreate(BaseModel):
     service_id: int
+    barber_id: int | None = None
     date: date
     start_time: time
     client: ClientInput
@@ -26,6 +27,8 @@ class AppointmentRead(BaseModel):
     start_time: time
     status: str
     origin: str
+    barber_id: int
+    barber_name: str
     service_id: int
     service_name: str
     client_id: int
@@ -42,6 +45,7 @@ class PublicCancellationAppointment(BaseModel):
     date: date
     start_time: time
     status: str
+    barber_name: str
     service_name: str
     client_first_name: str
     client_last_name: str
@@ -50,6 +54,9 @@ class PublicCancellationAppointment(BaseModel):
 class AgendaSlot(BaseModel):
     time: time
     status: str
+    barber_id: int | None = None
+    barber_name: str | None = None
     appointment: AppointmentRead | None = None
     block_id: int | None = None
     block_reason: str | None = None
+

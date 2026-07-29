@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+﻿const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
 async function request(path, options = {}) {
   const token = localStorage.getItem("adminToken");
@@ -24,7 +24,11 @@ async function request(path, options = {}) {
 
 export const api = {
   services: () => request("/services"),
-  availability: (date) => request(`/availability?date=${date}`),
+  barbers: () => request("/barbers"),
+  availability: (date, barberId = null) => {
+    const suffix = barberId ? `&barber_id=${encodeURIComponent(barberId)}` : "";
+    return request(`/availability?date=${date}${suffix}`);
+  },
   createAppointment: (payload) => request("/appointments", { method: "POST", body: JSON.stringify(payload) }),
   login: (payload) => request("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
   agenda: (date) => request(`/appointments/agenda?date_=${date}`),
@@ -35,4 +39,3 @@ export const api = {
   blockSlot: (payload) => request("/blocks", { method: "POST", body: JSON.stringify(payload) }),
   unblockSlot: (id) => request(`/blocks/${id}`, { method: "DELETE" }),
 };
-
