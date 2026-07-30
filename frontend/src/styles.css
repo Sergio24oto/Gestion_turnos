@@ -128,6 +128,9 @@ button { cursor: pointer; }
 .availability-header, .admin-toolbar { display: flex; justify-content: space-between; gap: 18px; align-items: end; margin-bottom: 24px; }
 .time-button { background: #fbf4e8; font-size: 18px; }
 .form-grid { display: grid; gap: 14px; max-width: 620px; }
+.step-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 18px; }
+.step-actions.single { justify-content: flex-start; }
+.step-actions .ghost, .step-actions .primary { min-width: 150px; }
 .form-grid.compact { max-width: 420px; }
 label { display: grid; gap: 7px; color: var(--muted); font-size: 14px; font-weight: 700; }
 label span { font-weight: 500; }
@@ -209,10 +212,7 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
   .toolbar-actions { justify-content: stretch; margin-top: 14px; }
   .toolbar-actions > * { flex: 1 1 190px; }
   .time-grid { grid-template-columns: 1fr; }
-  .confirmation-actions { display: grid; }
-  .confirmation-actions button { width: 100%; }
+  .confirmation-actions, .step-actions { display: grid; }
+  .confirmation-actions button, .step-actions button { width: 100%; }
+  .step-actions .ghost, .step-actions .primary { min-width: 0; }
 }
-
-
-
-

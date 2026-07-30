@@ -177,6 +177,7 @@ export default function App() {
   const [serviceId, setServiceId] = useState(null);
   const [date, setDate] = useState(firstOpenDate());
   const [available, setAvailable] = useState([]);
+  const [availabilityKey, setAvailabilityKey] = useState("");
   const [time, setTime] = useState(null);
   const [client, setClient] = useState({ first_name: "", last_name: "", phone: "" });
   const [booking, setBooking] = useState(null);
@@ -233,9 +234,16 @@ export default function App() {
   useEffect(() => {
     if (step === "time" && date) {
       const queryBarber = barberId === ANY_BARBER ? null : barberId;
-      api.availability(date, queryBarber).then(setAvailable).catch((err) => setError(err.message));
+      const nextAvailabilityKey = `${date}:${queryBarber || ANY_BARBER}`;
+      if (availabilityKey === nextAvailabilityKey) return;
+      api.availability(date, queryBarber)
+        .then((slots) => {
+          setAvailable(slots);
+          setAvailabilityKey(nextAvailabilityKey);
+        })
+        .catch((err) => setError(err.message));
     }
-  }, [step, date, barberId]);
+  }, [step, date, barberId, availabilityKey]);
 
   useEffect(() => {
     if (view === "admin" && token) refreshAgenda();
@@ -331,11 +339,40 @@ export default function App() {
     refreshAgenda();
   }
 
+  function goBackToBarber() {
+    setServiceId(null);
+    setDate(null);
+    setTime(null);
+    setAvailable([]);
+    setAvailabilityKey("");
+    setStep("barber");
+  }
+
+  function goBackToService() {
+    setDate(null);
+    setTime(null);
+    setAvailable([]);
+    setAvailabilityKey("");
+    setStep("service");
+  }
+
+  function goBackToDate() {
+    setTime(null);
+    setStep("date");
+  }
+
+  function goBackToTime() {
+    setStep("time");
+  }
+
   function resetClient() {
     setStep("welcome");
     setBarberId(null);
     setServiceId(null);
+    setDate(firstOpenDate());
     setTime(null);
+    setAvailable([]);
+    setAvailabilityKey("");
     setClient({ first_name: "", last_name: "", phone: "" });
     setBooking(null);
     setCopyMessage("");
@@ -486,7 +523,7 @@ export default function App() {
                       <strong>{barber.name}</strong>
                       <span>{barber.description}</span>
                     </div>
-                    <button className="primary" onClick={() => { setBarberId(barber.id); setStep("service"); }}>Elegir</button>
+                    <button className="primary" onClick={() => { setBarberId(barber.id); setServiceId(null); setDate(null); setTime(null); setAvailable([]); setAvailabilityKey(""); setStep("service"); }}>Elegir</button>
                   </article>
                 ))}
                 <article className={`barber-card ${barberId === ANY_BARBER ? "selected" : ""}`}>
@@ -495,7 +532,7 @@ export default function App() {
                     <strong>Sin preferencia</strong>
                     <span>Asignamos automáticamente un peluquero disponible.</span>
                   </div>
-                  <button className="primary" onClick={() => { setBarberId(ANY_BARBER); setStep("service"); }}>Elegir</button>
+                  <button className="primary" onClick={() => { setBarberId(ANY_BARBER); setServiceId(null); setDate(null); setTime(null); setAvailable([]); setAvailabilityKey(""); setStep("service"); }}>Elegir</button>
                 </article>
               </div>
             </section>
@@ -506,10 +543,13 @@ export default function App() {
               <div className="step-head"><p className="eyebrow">Paso 2</p><h2>Elegí el servicio</h2><p>Peluquero: <strong>{currentBarberName}</strong></p></div>
               <div className="service-grid">
                 {services.map((service) => (
-                  <button key={service.id} className={`service-card ${serviceId === service.id ? "selected" : ""}`} onClick={() => { setServiceId(service.id); setStep("date"); }}>
+                  <button key={service.id} className={`service-card ${serviceId === service.id ? "selected" : ""}`} onClick={() => { setServiceId(service.id); setDate(null); setTime(null); setAvailable([]); setAvailabilityKey(""); setStep("date"); }}>
                     <strong>{service.name}</strong><span>{service.duration_minutes} minutos</span>
                   </button>
                 ))}
+              </div>
+              <div className="step-actions single">
+                <button className="ghost" onClick={goBackToBarber}>← Volver</button>
               </div>
             </section>
           )}
@@ -524,13 +564,16 @@ export default function App() {
                 {dateOptions().map((iso) => {
                   const local = parseLocalDate(iso);
                   return (
-                    <button key={iso} className={`date-card ${date === iso ? "selected" : ""}`} disabled={!isOpenDay(iso)} onClick={() => { setDate(iso); setStep("time"); }}>
+                    <button key={iso} className={`date-card ${date === iso ? "selected" : ""}`} disabled={!isOpenDay(iso)} onClick={() => { setDate(iso); setTime(null); setStep("time"); }}>
                       <span>{new Intl.DateTimeFormat("es-AR", { weekday: "short" }).format(local)}</span>
                       <strong>{local.getDate()}</strong>
                       <span>{new Intl.DateTimeFormat("es-AR", { month: "short" }).format(local)}</span>
                     </button>
                   );
                 })}
+              </div>
+              <div className="step-actions single">
+                <button className="ghost" onClick={goBackToService}>← Volver</button>
               </div>
             </section>
           )}
@@ -539,7 +582,7 @@ export default function App() {
             <section className="panel">
               <div className="availability-header">
                 <div><p className="eyebrow">TURNOS DISPONIBLES</p><h2>{formatDate(date)}</h2><p>Peluquero: <strong>{currentBarberName}</strong></p></div>
-                <button className="ghost" onClick={() => setStep("date")}>Cambiar fecha</button>
+                <button className="ghost" onClick={goBackToDate}>← Volver</button>
               </div>
               {visibleAvailable.length ? (
                 <div className="time-grid">
@@ -557,7 +600,10 @@ export default function App() {
                 <label>Apellido<input required value={client.last_name} onChange={(e) => setClient({ ...client, last_name: e.target.value })} /></label>
                 <label>Teléfono o WhatsApp<input required value={client.phone} onChange={(e) => setClient({ ...client, phone: e.target.value })} /></label>
                 <Summary barber={currentBarberName} service={selectedService} date={date} time={time} customer={`${client.first_name} ${client.last_name}`.trim()} />
-                <button className="primary" type="submit">Confirmar turno</button>
+                <div className="step-actions">
+                  <button className="ghost" type="button" onClick={goBackToTime}>← Volver</button>
+                  <button className="primary" type="submit">Confirmar turno</button>
+                </div>
               </form>
             </section>
           )}
@@ -657,4 +703,3 @@ export default function App() {
     </div>
   );
 }
-
