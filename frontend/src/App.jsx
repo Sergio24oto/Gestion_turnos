@@ -467,20 +467,11 @@ export default function App() {
           {step === "welcome" && (
             <section className="hero active">
               <div className="hero-copy">
-                <div className="logo-large"><img src="/marcelo-navarro-logo.png" alt="Marcelo Navarro Peluqueria Unisex" /></div>
                 <p className="eyebrow">Agenda online</p>
-                <h1>Reserva tu próximo corte sin esperar mensajes.</h1>
-                <p className="lead">Elegí peluquero, servicio, fecha y horario disponible. Sin cuenta y en pocos pasos.</p>
+                <h1>Reservá tu próximo corte.</h1>
+                <p className="lead">Elegí peluquero, servicio, fecha y horario disponible.</p>
                 <button className="primary cta" onClick={() => setStep("barber")}>Reservar turno</button>
               </div>
-              <aside className="phone-preview" aria-label="Vista previa de turnos disponibles">
-                <p>TURNOS DISPONIBLES</p>
-                <h2>Miércoles 25 de septiembre</h2>
-                <div className="preview-times">
-                  <span>09:00 hs.</span><span>09:20 hs.</span><span>09:40 hs.</span>
-                  <span>10:00 hs.</span><span>10:20 hs.</span><span>10:40 hs.</span>
-                </div>
-              </aside>
             </section>
           )}
 
@@ -666,3 +657,4 @@ export default function App() {
     </div>
   );
 }
+
