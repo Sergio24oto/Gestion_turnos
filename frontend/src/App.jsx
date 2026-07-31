@@ -228,6 +228,10 @@ export default function App() {
   const [date, setDate] = useState(firstOpenDate());
   const [available, setAvailable] = useState([]);
   const [availabilityKey, setAvailabilityKey] = useState("");
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState("");
+  const [availabilityRetry, setAvailabilityRetry] = useState(0);
+  const availabilityRequestRef = useRef("");
   const [time, setTime] = useState(null);
   const [client, setClient] = useState({ first_name: "", last_name: "", phone: "" });
   const [booking, setBooking] = useState(null);
@@ -289,14 +293,29 @@ export default function App() {
       const queryBarber = barberId === ANY_BARBER ? null : barberId;
       const nextAvailabilityKey = `${date}:${queryBarber || ANY_BARBER}`;
       if (availabilityKey === nextAvailabilityKey) return;
+      const requestKey = `${nextAvailabilityKey}:${availabilityRetry}`;
+      availabilityRequestRef.current = requestKey;
+      setLoadingAvailability(true);
+      setAvailabilityError("");
       api.availability(date, queryBarber)
         .then((slots) => {
+          if (availabilityRequestRef.current !== requestKey) return;
           setAvailable(slots);
           setAvailabilityKey(nextAvailabilityKey);
+          setAvailabilityError("");
         })
-        .catch((err) => setError(err.message));
+        .catch(() => {
+          if (availabilityRequestRef.current !== requestKey) return;
+          setAvailable([]);
+          setAvailabilityError("No pudimos cargar los horarios. Intentá nuevamente.");
+        })
+        .finally(() => {
+          if (availabilityRequestRef.current === requestKey) {
+            setLoadingAvailability(false);
+          }
+        });
     }
-  }, [step, date, barberId, availabilityKey]);
+  }, [step, date, barberId, availabilityKey, availabilityRetry]);
 
   useEffect(() => {
     if (view === "admin" && token) refreshAgenda();
@@ -351,8 +370,9 @@ export default function App() {
     } catch (err) {
       setError(err.message);
       setStep("time");
-      const queryBarber = barberId === ANY_BARBER ? null : barberId;
-      api.availability(date, queryBarber).then(setAvailable);
+      setLoadingAvailability(true);
+      setAvailabilityKey("");
+      setAvailabilityRetry((value) => value + 1);
     } finally {
       setBookingPending(false);
     }
@@ -408,29 +428,37 @@ export default function App() {
     refreshAgenda();
   }
 
+  function resetAvailabilityState(loading = false) {
+    availabilityRequestRef.current = "";
+    setAvailable([]);
+    setAvailabilityKey("");
+    setAvailabilityError("");
+    setLoadingAvailability(loading);
+  }
+
   function goBackToBarber() {
     setServiceId(null);
     setDate(null);
     setTime(null);
-    setAvailable([]);
-    setAvailabilityKey("");
+    resetAvailabilityState();
     setStep("barber");
   }
 
   function goBackToService() {
     setDate(null);
     setTime(null);
-    setAvailable([]);
-    setAvailabilityKey("");
+    resetAvailabilityState();
     setStep("service");
   }
 
   function goBackToDate() {
     setTime(null);
+    setAvailabilityError("");
     setStep("date");
   }
 
   function goBackToTime() {
+    setAvailabilityError("");
     setStep("time");
   }
 
@@ -440,8 +468,7 @@ export default function App() {
     setServiceId(null);
     setDate(firstOpenDate());
     setTime(null);
-    setAvailable([]);
-    setAvailabilityKey("");
+    resetAvailabilityState();
     setClient({ first_name: "", last_name: "", phone: "" });
     setBooking(null);
     setCopyMessage("");
@@ -606,7 +633,7 @@ export default function App() {
                       <strong>{barber.name}</strong>
                       <span>{barber.description}</span>
                     </div>
-                    <button className="primary" onClick={() => { setBarberId(barber.id); setServiceId(null); setDate(null); setTime(null); setAvailable([]); setAvailabilityKey(""); setStep("service"); }}>Elegir</button>
+                    <button className="primary" onClick={() => { setBarberId(barber.id); setServiceId(null); setDate(null); setTime(null); resetAvailabilityState(); setStep("service"); }}>Elegir</button>
                   </article>
                 ))}
                 <article className={`barber-card ${barberId === ANY_BARBER ? "selected" : ""}`}>
@@ -615,7 +642,7 @@ export default function App() {
                     <strong>Sin preferencia</strong>
                     <span>Asignamos automáticamente un peluquero disponible.</span>
                   </div>
-                  <button className="primary" onClick={() => { setBarberId(ANY_BARBER); setServiceId(null); setDate(null); setTime(null); setAvailable([]); setAvailabilityKey(""); setStep("service"); }}>Elegir</button>
+                  <button className="primary" onClick={() => { setBarberId(ANY_BARBER); setServiceId(null); setDate(null); setTime(null); resetAvailabilityState(); setStep("service"); }}>Elegir</button>
                 </article>
               </div>
             </section>
@@ -626,7 +653,7 @@ export default function App() {
               <div className="step-head"><p className="eyebrow">Paso 2</p><h2>Elegí el servicio</h2><p>Peluquero: <strong>{currentBarberName}</strong></p></div>
               <div className="service-grid">
                 {services.map((service) => (
-                  <button key={service.id} className={`service-card ${serviceId === service.id ? "selected" : ""}`} onClick={() => { setServiceId(service.id); setDate(null); setTime(null); setAvailable([]); setAvailabilityKey(""); setStep("date"); }}>
+                  <button key={service.id} className={`service-card ${serviceId === service.id ? "selected" : ""}`} onClick={() => { setServiceId(service.id); setDate(null); setTime(null); resetAvailabilityState(); setStep("date"); }}>
                     <strong>{service.name}</strong><span>{service.duration_minutes} minutos</span>
                   </button>
                 ))}
@@ -647,7 +674,7 @@ export default function App() {
                 {dateOptions().map((iso) => {
                   const local = parseLocalDate(iso);
                   return (
-                    <button key={iso} className={`date-card ${date === iso ? "selected" : ""}`} disabled={!isOpenDay(iso)} onClick={() => { setDate(iso); setTime(null); setStep("time"); }}>
+                    <button key={iso} className={`date-card ${date === iso ? "selected" : ""}`} disabled={!isOpenDay(iso)} onClick={() => { setDate(iso); setTime(null); resetAvailabilityState(true); setStep("time"); }}>
                       <span>{new Intl.DateTimeFormat("es-AR", { weekday: "short" }).format(local)}</span>
                       <strong>{local.getDate()}</strong>
                       <span>{new Intl.DateTimeFormat("es-AR", { month: "short" }).format(local)}</span>
@@ -667,11 +694,18 @@ export default function App() {
                 <div><p className="eyebrow">TURNOS DISPONIBLES</p><h2>{formatDate(date)}</h2><p>Peluquero: <strong>{currentBarberName}</strong></p></div>
                 <button className="ghost" onClick={goBackToDate}>← Volver</button>
               </div>
-              {visibleAvailable.length ? (
+              {loadingAvailability ? (
+                <p className="availability-state">Cargando horarios...</p>
+              ) : availabilityError ? (
+                <div className="availability-state availability-error">
+                  <p>{availabilityError}</p>
+                  <button className="ghost" onClick={() => { setLoadingAvailability(true); setAvailabilityKey(""); setAvailabilityRetry((value) => value + 1); }}>Reintentar</button>
+                </div>
+              ) : visibleAvailable.length ? (
                 <div className="time-grid">
                   {visibleAvailable.map((slot) => <button key={slot} className="time-button" onClick={() => { setTime(slot); setStep("details"); }}>{timeLabel(slot)}</button>)}
                 </div>
-              ) : <p className="empty">No quedan turnos disponibles para esta fecha.</p>}
+              ) : <p className="empty">No hay horarios disponibles para esta fecha.</p>}
             </section>
           )}
 
