@@ -53,7 +53,7 @@ function cancellationLink(token) {
 }
 
 function normalizePhoneInput(value) {
-  return String(value || "").replace(/[\s\-()]/g, "");
+  return String(value || "").replace(/\D/g, "");
 }
 
 function isValidPhoneInput(value) {
@@ -63,11 +63,12 @@ function isValidPhoneInput(value) {
   return /^\d{10,11}$/.test(normalizePhoneInput(raw));
 }
 
-function whatsappRecipientFromPhone(phone) {
-  const digits = normalizePhoneInput(phone);
-  // Para numeros argentinos locales de 10 digitos usamos 549 para abrir WhatsApp.
-  if (digits.length === 10 && !digits.startsWith("54")) return `549${digits}`;
-  if (digits.startsWith("54")) return digits;
+function prepareArgentineWhatsAppPhone(phone) {
+  let digits = normalizePhoneInput(phone);
+  if (digits.startsWith("0")) digits = digits.slice(1);
+  if (digits.startsWith("549")) return digits;
+  if (digits.startsWith("54")) return `549${digits.slice(2)}`;
+  if (digits.length === 10) return `549${digits}`;
   return digits;
 }
 
@@ -93,7 +94,10 @@ function whatsappMessage(booking) {
 }
 
 function whatsappUrl(booking) {
-  return `https://wa.me/${whatsappRecipientFromPhone(booking.client_phone)}?text=${encodeURIComponent(whatsappMessage(booking))}`;
+  const message = whatsappMessage(booking);
+  const encodedMessage = encodeURIComponent(message);
+  const whatsappPhone = prepareArgentineWhatsAppPhone(booking.client_phone);
+  return `https://api.whatsapp.com/send?phone=${whatsappPhone}&text=${encodedMessage}`;
 }
 
 function cancellationTokenFromPath() {
@@ -455,7 +459,17 @@ export default function App() {
 
   function openWhatsAppConfirmation() {
     if (!booking) return;
-    window.open(whatsappUrl(booking), "_blank", "noopener,noreferrer");
+    const enteredPhone = booking.client_phone;
+    const normalizedPhone = normalizePhoneInput(enteredPhone);
+    const whatsappPhone = prepareArgentineWhatsAppPhone(enteredPhone);
+    const finalUrl = whatsappUrl(booking);
+    console.log("WhatsApp confirmation link", {
+      telefonoIngresado: enteredPhone,
+      telefonoNormalizado: normalizedPhone,
+      telefonoWhatsApp: whatsappPhone,
+      urlFinal: finalUrl,
+    });
+    window.open(finalUrl, "_blank", "noopener,noreferrer");
   }
 
   function closeConfirmationModal() {
