@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import React from "react";
 import { api } from "./api";
 
@@ -6,6 +6,7 @@ const TZ = "America/Argentina/Cordoba";
 const MIN_BOOKING_NOTICE_MINUTES = 20;
 const ANY_BARBER = "any";
 const ALL_BARBERS = "all";
+const BUSINESS_NAME = "Marcelo Navarro";
 
 const BARBER_VISUALS = {
   marcelo: {
@@ -49,6 +50,50 @@ function timeLabel(value) {
 
 function cancellationLink(token) {
   return `${window.location.origin}/cancelar/${encodeURIComponent(token)}`;
+}
+
+function normalizePhoneInput(value) {
+  return String(value || "").replace(/[\s\-()]/g, "");
+}
+
+function isValidPhoneInput(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  if (/[^\d\s\-()]/.test(raw)) return false;
+  return /^\d{10,11}$/.test(normalizePhoneInput(raw));
+}
+
+function whatsappRecipientFromPhone(phone) {
+  const digits = normalizePhoneInput(phone);
+  // Para numeros argentinos locales de 10 digitos usamos 549 para abrir WhatsApp.
+  if (digits.length === 10 && !digits.startsWith("54")) return `549${digits}`;
+  if (digits.startsWith("54")) return digits;
+  return digits;
+}
+
+function bookingCancellationLink(booking) {
+  return booking?.cancellation_token ? cancellationLink(booking.cancellation_token) : "";
+}
+
+function whatsappMessage(booking) {
+  const link = bookingCancellationLink(booking);
+  return [
+    `Hola ${booking.client_first_name}.`,
+    "",
+    `Tu turno en ${BUSINESS_NAME} fue confirmado.`,
+    "",
+    `Peluquero: ${normalizeBarberName(booking.barber_name)}`,
+    `Servicio: ${booking.service_name}`,
+    `Fecha: ${formatDate(booking.date)}`,
+    `Hora: ${timeLabel(booking.start_time)}`,
+    "",
+    "Para cancelar tu turno:",
+    link,
+  ].join("\n");
+}
+
+function whatsappUrl(booking) {
+  return `https://wa.me/${whatsappRecipientFromPhone(booking.client_phone)}?text=${encodeURIComponent(whatsappMessage(booking))}`;
 }
 
 function cancellationTokenFromPath() {
@@ -155,7 +200,7 @@ function BarberLabel({ barber, name }) {
   );
 }
 
-function Summary({ barber, service, date, time, customer }) {
+function Summary({ barber, service, date, time, customer, phone }) {
   const barberName = barber ? normalizeBarberName(barber) : "";
   return (
     <div className="summary">
@@ -164,6 +209,7 @@ function Summary({ barber, service, date, time, customer }) {
       <div><span>Fecha</span><strong>{date ? formatDate(date) : "-"}</strong></div>
       <div><span>Hora</span><strong>{time ? timeLabel(time) : "-"}</strong></div>
       {customer ? <div><span>Cliente</span><strong>{customer}</strong></div> : null}
+      {phone ? <div><span>Teléfono</span><strong>{phone}</strong></div> : null}
     </div>
   );
 }
@@ -181,6 +227,8 @@ export default function App() {
   const [time, setTime] = useState(null);
   const [client, setClient] = useState({ first_name: "", last_name: "", phone: "" });
   const [booking, setBooking] = useState(null);
+  const [bookingPending, setBookingPending] = useState(false);
+  const confirmationDialogRef = useRef(null);
   const [copyMessage, setCopyMessage] = useState("");
   const [error, setError] = useState("");
   const [token, setToken] = useState(localStorage.getItem("adminToken") || "");
@@ -193,6 +241,7 @@ export default function App() {
   const [cancelAppointmentData, setCancelAppointmentData] = useState(null);
   const [cancelStatus, setCancelStatus] = useState("loading");
   const [cancelError, setCancelError] = useState("");
+  const phoneError = client.phone && !isValidPhoneInput(client.phone) ? "Ingresá un teléfono válido de 10 u 11 números." : "";
   const selectedService = services.find((item) => item.id === Number(serviceId));
   const currentBarberName = selectedBarberName(barbers, barberId);
   const visibleAvailable = useMemo(
@@ -267,25 +316,41 @@ export default function App() {
     }
   }
 
+  function showCopyFeedback(message) {
+    setCopyMessage(message);
+    window.setTimeout(() => setCopyMessage(""), 2500);
+  }
+
   async function submitBooking(event) {
     event.preventDefault();
+    if (bookingPending) return;
     setError("");
+    setCopyMessage("");
+    if (!isValidPhoneInput(client.phone)) {
+      setError("Ingresá un teléfono válido de 10 u 11 números.");
+      return;
+    }
+    setBookingPending(true);
     try {
       const saved = await api.createAppointment({
         barber_id: barberId === ANY_BARBER ? null : Number(barberId),
         service_id: Number(serviceId),
         date,
         start_time: time,
-        client,
+        client: {
+          ...client,
+          phone: normalizePhoneInput(client.phone),
+        },
       });
       setBooking({ ...saved, barber_name: normalizeBarberName(saved.barber_name) });
-      setCopyMessage("");
       setStep("confirmation");
     } catch (err) {
       setError(err.message);
       setStep("time");
       const queryBarber = barberId === ANY_BARBER ? null : barberId;
       api.availability(date, queryBarber).then(setAvailable);
+    } finally {
+      setBookingPending(false);
     }
   }
 
@@ -380,17 +445,21 @@ export default function App() {
   }
 
   async function copyCancellationLink() {
-    if (!booking?.cancellation_token) return;
-    const link = cancellationLink(booking.cancellation_token);
+    const link = bookingCancellationLink(booking);
+    if (!link) return;
     if (navigator.clipboard) {
       await navigator.clipboard.writeText(link);
+      showCopyFeedback("Enlace copiado");
     }
-    setCopyMessage("Enlace copiado.");
   }
 
-  function openCancellationLink() {
-    if (!booking?.cancellation_token) return;
-    window.open(cancellationLink(booking.cancellation_token), "_blank", "noopener,noreferrer");
+  function openWhatsAppConfirmation() {
+    if (!booking) return;
+    window.open(whatsappUrl(booking), "_blank", "noopener,noreferrer");
+  }
+
+  function closeConfirmationModal() {
+    resetClient();
   }
 
   async function confirmPublicCancellation() {
@@ -598,34 +667,19 @@ export default function App() {
               <form className="form-grid" onSubmit={submitBooking}>
                 <label>Nombre<input required value={client.first_name} onChange={(e) => setClient({ ...client, first_name: e.target.value })} /></label>
                 <label>Apellido<input required value={client.last_name} onChange={(e) => setClient({ ...client, last_name: e.target.value })} /></label>
-                <label>Teléfono o WhatsApp<input required value={client.phone} onChange={(e) => setClient({ ...client, phone: e.target.value })} /></label>
+                <label>Teléfono o WhatsApp
+                  <input required inputMode="tel" placeholder="Ej: 3575406316" value={client.phone} aria-invalid={Boolean(phoneError)} onChange={(e) => setClient({ ...client, phone: e.target.value })} />
+                  <span className={phoneError ? "field-error" : "field-help"}>{phoneError || "Ingresá código de área y número."}</span>
+                </label>
                 <Summary barber={currentBarberName} service={selectedService} date={date} time={time} customer={`${client.first_name} ${client.last_name}`.trim()} />
                 <div className="step-actions">
                   <button className="ghost" type="button" onClick={goBackToTime}>← Volver</button>
-                  <button className="primary" type="submit">Confirmar turno</button>
+                  <button className="primary" type="submit" disabled={bookingPending || Boolean(phoneError)}>{bookingPending ? "Confirmando turno..." : "Confirmar turno"}</button>
                 </div>
               </form>
             </section>
           )}
 
-          {step === "confirmation" && (
-            <section className="confirmation">
-              <div className="success-mark">OK</div>
-              <h2>Tu turno fue reservado correctamente</h2>
-              <Summary barber={booking.barber_name} service={{ name: booking.service_name }} date={booking.date} time={booking.start_time} customer={`${booking.client_first_name} ${booking.client_last_name}`} />
-              {booking.cancellation_token ? (
-                <div className="cancel-link-box">
-                  <p>Guardá este enlace por si necesitás cancelar tu turno.</p>
-                  <div className="confirmation-actions">
-                    <button className="ghost" onClick={copyCancellationLink}>Copiar enlace</button>
-                    <button className="primary" onClick={openCancellationLink}>Abrir enlace</button>
-                  </div>
-                  {copyMessage ? <span className="copy-message">{copyMessage}</span> : null}
-                </div>
-              ) : null}
-              <button className="primary" onClick={resetClient}>Finalizar</button>
-            </section>
-          )}
         </main>
       ) : (
         <main>
@@ -686,6 +740,36 @@ export default function App() {
           )}
         </main>
       )}
+
+
+      {view === "client" && step === "confirmation" && booking ? (
+        <div className="modal-layer confirmation-modal" role="presentation">
+          <section className="dialog-card confirmed-dialog" role="dialog" aria-modal="true" aria-labelledby="confirmed-title" tabIndex="-1" ref={confirmationDialogRef}>
+            <button className="dialog-close" type="button" onClick={closeConfirmationModal} aria-label="Cerrar">Cerrar</button>
+            <div className="success-mark">OK</div>
+            <p className="eyebrow">Turno confirmado</p>
+            <h2 id="confirmed-title">Turno confirmado</h2>
+            <p className="modal-lead">Tu turno fue reservado correctamente.</p>
+            <Summary
+              barber={booking.barber_name}
+              service={{ name: booking.service_name }}
+              date={booking.date}
+              time={booking.start_time}
+              customer={`${booking.client_first_name} ${booking.client_last_name}`}
+              phone={booking.client_phone}
+            />
+            <div className="cancel-link-box highlighted">
+              <p>Guardá tu enlace de cancelación.<br />También podés enviártelo por WhatsApp usando el botón de abajo.</p>
+              <span className="cancel-url">{bookingCancellationLink(booking)}</span>
+            </div>
+            <div className="modal-actions">
+              <button className="primary whatsapp-button" type="button" onClick={openWhatsAppConfirmation}>Enviar confirmación por WhatsApp</button>
+              <button className="ghost" type="button" onClick={copyCancellationLink}>Copiar enlace de cancelación</button>
+            </div>
+            {copyMessage ? <span className="copy-message">{copyMessage}</span> : null}
+          </section>
+        </div>
+      ) : null}
 
       {manual ? (
         <div className="modal-layer">

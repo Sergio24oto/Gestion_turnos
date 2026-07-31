@@ -1,12 +1,28 @@
 ﻿from datetime import date, time
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def normalize_phone(value: str) -> str:
+    raw = str(value or "").strip()
+    allowed_format_chars = set(" -()")
+    if any(not char.isdigit() and char not in allowed_format_chars for char in raw):
+        raise ValueError("Ingresá un teléfono válido de 10 u 11 números.")
+    phone = "".join(char for char in raw if char.isdigit())
+    if len(phone) not in (10, 11):
+        raise ValueError("Ingresá un teléfono válido de 10 u 11 números.")
+    return phone
 
 
 class ClientInput(BaseModel):
     first_name: str = Field(min_length=1, max_length=80)
     last_name: str = Field(min_length=1, max_length=80)
     phone: str = Field(min_length=1, max_length=40)
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone_value(cls, value: str) -> str:
+        return normalize_phone(value)
 
 
 class AppointmentCreate(BaseModel):

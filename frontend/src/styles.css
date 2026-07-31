@@ -86,6 +86,7 @@ button { cursor: pointer; }
 .primary { background: var(--accent-strong); color: white; box-shadow: 0 14px 28px rgba(21,17,13,.16); }
 .ghost { background: transparent; color: var(--ink); border-color: var(--line); }
 .primary:hover, .ghost:hover { transform: translateY(-1px); }
+button:disabled { cursor: not-allowed; opacity: .58; transform: none; box-shadow: none; }
 .panel, .confirmation, .admin-panel {
   background: rgba(255,253,248,.9); border: 1px solid var(--line); border-radius: 24px;
   box-shadow: 0 24px 80px rgba(41, 35, 28, .10);
@@ -134,6 +135,9 @@ button { cursor: pointer; }
 .form-grid.compact { max-width: 420px; }
 label { display: grid; gap: 7px; color: var(--muted); font-size: 14px; font-weight: 700; }
 label span { font-weight: 500; }
+.field-help, .field-error { font-size: 13px; line-height: 1.35; }
+.field-help { color: var(--muted); }
+.field-error { color: var(--bad); font-weight: 800; }
 input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px solid var(--line); padding: 0 14px; background: #fffaf1; color: var(--ink); }
 .summary { border: 1px solid var(--line); border-radius: 18px; background: #fbf4e8; padding: 16px; display: grid; gap: 8px; }
 .summary div { display:flex; justify-content: space-between; gap: 12px; }
@@ -188,6 +192,46 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 .modal-layer { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(21,17,13,.38); backdrop-filter: blur(4px); z-index: 10; padding: 18px; }
 .dialog-card { display: grid; gap: 14px; width: min(520px, 100%); padding: 22px; background: var(--paper); border-radius: 22px; border: 1px solid var(--line); }
 .dialog-card menu { display: flex; justify-content: flex-end; gap: 10px; padding: 0; margin: 4px 0 0; }
+.confirmed-dialog {
+  position: relative;
+  width: min(620px, 100%);
+  max-height: min(760px, calc(100svh - 28px));
+  overflow-y: auto;
+  text-align: center;
+  padding: clamp(18px, 5vw, 30px);
+}
+.confirmed-dialog h2 {
+  margin: 0;
+  font-size: clamp(30px, 6vw, 42px);
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 500;
+}
+.modal-lead { margin: 0; color: var(--muted); font-weight: 700; }
+.dialog-close {
+  justify-self: end;
+  min-height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fffaf1;
+  color: var(--ink);
+  padding: 0 14px;
+  font-weight: 800;
+}
+.cancel-link-box.highlighted { text-align: left; border-color: rgba(155, 111, 61, .42); background: #fff8e9; }
+.cancel-url {
+  display: block;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: #fffdf8;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.modal-actions { display: grid; gap: 10px; }
+.modal-actions button { width: 100%; }
+.whatsapp-button { background: #1f8f55; border-color: #1f8f55; color: white; }
 @media (max-width: 820px) {
   .shell { width: min(100% - 20px, 680px); padding-top: 10px; }
   .topbar { gap: 10px; padding: 8px; border-radius: 16px; }
