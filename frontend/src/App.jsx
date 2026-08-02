@@ -7,6 +7,7 @@ const MIN_BOOKING_NOTICE_MINUTES = 20;
 const ANY_BARBER = "any";
 const ALL_BARBERS = "all";
 const BUSINESS_NAME = "Marcelo Navarro";
+const RESERVATION_STEPS = ["barber", "service", "date", "time", "details"];
 
 const BARBER_VISUALS = {
   marcelo: {
@@ -178,6 +179,11 @@ function selectedBarberName(barbers, barberId) {
   return barberById(barbers, barberId)?.name || "-";
 }
 
+function reservationStepNumber(step) {
+  const index = RESERVATION_STEPS.indexOf(step);
+  return index >= 0 ? index + 1 : 0;
+}
+
 function BarberAvatar({ barber, name, size = "sm" }) {
   const displayName = barber?.name || normalizeBarberName(name);
   const photoUrl = barber?.photo_url || (displayName.includes("Jerem") ? BARBER_VISUALS.jeremias.photo_url : BARBER_VISUALS.marcelo.photo_url);
@@ -264,6 +270,9 @@ export default function App() {
     () => barbers.map((barber) => ({ barber, slots: agenda.filter((slot) => slot.barber_id === barber.id) })),
     [agenda, barbers]
   );
+  const isReservationFlow = view === "client" && RESERVATION_STEPS.includes(step);
+  const currentReservationStep = reservationStepNumber(step);
+  const reservationProgress = currentReservationStep ? `${currentReservationStep * 20}%` : "0%";
 
   useEffect(() => {
     api.services().then(setServices).catch((err) => setError(err.message));
@@ -595,7 +604,8 @@ export default function App() {
   }
 
   return (
-    <div className="shell">
+    <div className={isReservationFlow ? "shell flow-shell" : "shell"}>
+      {!isReservationFlow ? (
       <header className="topbar">
         <button className="brand" onClick={() => { setView("client"); resetClient(); }} aria-label="Volver al inicio">
           <span className="logo-slot"><img src="/marcelo-navarro-logo.png" alt="Marcelo Navarro Peluqueria Unisex" /></span>
@@ -606,11 +616,12 @@ export default function App() {
           <button className={`tab ${view === "admin" ? "active" : ""}`} onClick={() => setView("admin")}>Admin</button>
         </nav>
       </header>
+      ) : null}
 
       {error ? <p className="error global-error">{error}</p> : null}
 
       {view === "client" ? (
-        <main>
+        <main className={isReservationFlow ? "reservation-main" : undefined}>
           {step === "welcome" && (
             <section className="hero active">
               <div className="hero-copy">
@@ -621,6 +632,19 @@ export default function App() {
               </div>
             </section>
           )}
+
+
+          {isReservationFlow ? (
+            <section className="flow-overview" aria-label={`Paso ${currentReservationStep} de 5`}>
+              <button className="flow-home" onClick={resetClient}>← Volver al inicio</button>
+              <div className="flow-progress-head">
+                <span>Paso {currentReservationStep} de 5</span>
+              </div>
+              <div className="flow-progress-track" aria-hidden="true">
+                <span style={{ width: reservationProgress }} />
+              </div>
+            </section>
+          ) : null}
 
           {step === "barber" && (
             <section className="panel">
@@ -811,7 +835,7 @@ export default function App() {
               <span className="cancel-url">{bookingCancellationLink(booking)}</span>
             </div>
             <div className="modal-actions">
-              <button className="primary whatsapp-button" type="button" onClick={openWhatsAppConfirmation}>Enviar confirmación por WhatsApp</button>
+              <button className="primary whatsapp-button" type="button" onClick={openWhatsAppConfirmation}>Enviar registro de turno por Whatsapp</button>
               <button className="ghost" type="button" onClick={copyCancellationLink}>Copiar enlace de cancelación</button>
             </div>
             {copyMessage ? <span className="copy-message">{copyMessage}</span> : null}
