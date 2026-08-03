@@ -1,5 +1,7 @@
 ﻿from datetime import date, time
 
+from decimal import Decimal
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -47,6 +49,7 @@ class AppointmentRead(BaseModel):
     barber_name: str
     service_id: int
     service_name: str
+    service_price: Decimal = Field(ge=Decimal("0"), max_digits=10, decimal_places=2)
     client_id: int
     client_first_name: str
     client_last_name: str
@@ -63,6 +66,7 @@ class PublicCancellationAppointment(BaseModel):
     status: str
     barber_name: str
     service_name: str
+    service_price: Decimal = Field(ge=Decimal("0"), max_digits=10, decimal_places=2)
     client_first_name: str
     client_last_name: str
 

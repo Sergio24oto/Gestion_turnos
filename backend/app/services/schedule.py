@@ -89,6 +89,7 @@ def appointment_to_read(appointment: Appointment) -> AppointmentRead:
         barber_name=appointment.barber.name,
         service_id=appointment.service_id,
         service_name=appointment.service.name,
+        service_price=appointment.service.price,
         client_id=appointment.client_id,
         client_first_name=appointment.client.first_name,
         client_last_name=appointment.client.last_name,
@@ -103,6 +104,7 @@ def appointment_to_public_cancellation(appointment: Appointment) -> PublicCancel
         status=appointment.status,
         barber_name=appointment.barber.name,
         service_name=appointment.service.name,
+        service_price=appointment.service.price,
         client_first_name=appointment.client.first_name,
         client_last_name=appointment.client.last_name,
     )

@@ -1,4 +1,6 @@
-﻿from sqlalchemy import select
+from decimal import Decimal
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -25,7 +27,7 @@ def seed_initial_data(db: Session) -> None:
     for name, duration in DEFAULT_SERVICES:
         exists = db.scalar(select(Service).where(Service.name == name))
         if not exists:
-            db.add(Service(name=name, duration_minutes=duration, active=True))
+            db.add(Service(name=name, duration_minutes=duration, price=Decimal("0.00"), active=True))
 
     for name, description, photo_url, order in DEFAULT_BARBERS:
         exists = db.scalar(select(Barber).where(Barber.name == name))

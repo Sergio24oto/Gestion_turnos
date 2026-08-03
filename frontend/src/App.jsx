@@ -49,6 +49,11 @@ function timeLabel(value) {
   return `${String(value).slice(0, 5)} hs.`;
 }
 
+function formatPrice(value) {
+  const amount = Number(value || 0);
+  return `$ ${new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(amount)}`;
+}
+
 function cancellationLink(token) {
   return `${window.location.origin}/cancelar/${encodeURIComponent(token)}`;
 }
@@ -86,6 +91,7 @@ function whatsappMessage(booking) {
     "",
     `Peluquero: ${normalizeBarberName(booking.barber_name)}`,
     `Servicio: ${booking.service_name}`,
+    `Precio: ${formatPrice(booking.service_price)}`,
     `Fecha: ${formatDate(booking.date)}`,
     `Hora: ${timeLabel(booking.start_time)}`,
     "",
@@ -216,6 +222,7 @@ function Summary({ barber, service, date, time, customer, phone }) {
     <div className="summary">
       {barber ? <div><span>Peluquero</span><strong><BarberLabel name={barberName} /></strong></div> : null}
       <div><span>Servicio</span><strong>{service?.name || "-"}</strong></div>
+      <div><span>Precio</span><strong>{formatPrice(service?.price)}</strong></div>
       <div><span>Fecha</span><strong>{date ? formatDate(date) : "-"}</strong></div>
       <div><span>Hora</span><strong>{time ? timeLabel(time) : "-"}</strong></div>
       {customer ? <div><span>Cliente</span><strong>{customer}</strong></div> : null}
@@ -532,7 +539,7 @@ export default function App() {
           <strong>{String(slot.time).slice(0, 5)}</strong>
           <span><BarberLabel barber={barber} name={slot.barber_name} /></span>
           <span>{slot.appointment ? `${slot.appointment.client_first_name} ${slot.appointment.client_last_name}` : slot.status === "Bloqueado" ? "Horario bloqueado" : "Disponible"}</span>
-          <span>{slot.appointment?.service_name || "-"}</span>
+          <span>{slot.appointment ? `${slot.appointment.service_name} · ${formatPrice(slot.appointment.service_price)}` : "-"}</span>
           <span className={`status ${slot.status === "Libre" ? "free" : slot.status === "Bloqueado" ? "blocked" : "booked"}`}>{slot.appointment?.origin === "MANUAL" ? "Registrado manualmente" : slot.status}</span>
           <div className="row-actions">
             {slot.status === "Libre" && <><button onClick={() => setManual({ time: slot.time, barber_id: slot.barber_id, service_id: services[0]?.id || "", first_name: "", last_name: "", phone: "" })}>Registrar</button><button onClick={() => blockSlot(slot)}>Bloquear</button></>}
@@ -569,7 +576,7 @@ export default function App() {
                 <h2>Confirmar cancelación</h2>
                 <Summary
                   barber={cancelAppointmentData.barber_name}
-                  service={{ name: cancelAppointmentData.service_name }}
+                  service={{ name: cancelAppointmentData.service_name, price: cancelAppointmentData.service_price }}
                   date={cancelAppointmentData.date}
                   time={cancelAppointmentData.start_time}
                 />
@@ -678,7 +685,7 @@ export default function App() {
               <div className="service-grid">
                 {services.map((service) => (
                   <button key={service.id} className={`service-card ${serviceId === service.id ? "selected" : ""}`} onClick={() => { setServiceId(service.id); setDate(null); setTime(null); resetAvailabilityState(); setStep("date"); }}>
-                    <strong>{service.name}</strong><span>{service.duration_minutes} minutos</span>
+                    <strong>{service.name}</strong><span>{service.duration_minutes} minutos · {formatPrice(service.price)}</span>
                   </button>
                 ))}
               </div>
@@ -824,7 +831,7 @@ export default function App() {
             <p className="modal-lead">Tu turno fue reservado correctamente.</p>
             <Summary
               barber={booking.barber_name}
-              service={{ name: booking.service_name }}
+              service={{ name: booking.service_name, price: booking.service_price }}
               date={booking.date}
               time={booking.start_time}
               customer={`${booking.client_first_name} ${booking.client_last_name}`}
@@ -851,7 +858,7 @@ export default function App() {
             <label>Nombre<input required value={manual.first_name} onChange={(e) => setManual({ ...manual, first_name: e.target.value })} /></label>
             <label>Apellido<input value={manual.last_name} onChange={(e) => setManual({ ...manual, last_name: e.target.value })} /></label>
             <label>Teléfono <span>opcional</span><input value={manual.phone} onChange={(e) => setManual({ ...manual, phone: e.target.value })} /></label>
-            <label>Servicio<select value={manual.service_id} onChange={(e) => setManual({ ...manual, service_id: e.target.value })}>{services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
+            <label>Servicio<select value={manual.service_id} onChange={(e) => setManual({ ...manual, service_id: e.target.value })}>{services.map((service) => <option key={service.id} value={service.id}>{service.name} · {formatPrice(service.price)}</option>)}</select></label>
             <menu><button type="button" className="ghost" onClick={() => setManual(null)}>Cerrar</button><button className="primary" type="submit">Guardar</button></menu>
           </form>
         </div>
