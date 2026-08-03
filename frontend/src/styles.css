@@ -198,6 +198,175 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 .status.blocked { color: var(--bad); background: #f5dedb; }
 .row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .row-actions button { min-height: 36px; border-radius: 999px; border: 1px solid var(--line); background: #fffdf8; }
+.admin-login.panel,
+.admin-panel {
+  color: #E6D7C6;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(198, 163, 106, .11), transparent 34%),
+    rgba(45, 32, 24, .90);
+  border: 1px solid rgba(198, 163, 106, .16);
+  box-shadow: 0 22px 58px rgba(0, 0, 0, .34);
+  backdrop-filter: blur(14px);
+}
+.admin-login h2,
+.admin-toolbar h2 {
+  color: #F5EBDD;
+  font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+}
+.admin-login p:not(.eyebrow),
+.admin-panel,
+.agenda-row {
+  color: #E6D7C6;
+}
+.admin-login label,
+.admin-login .field-help,
+.admin-panel .toolbar-actions,
+.agenda-group h3 {
+  color: #B89F82;
+}
+.admin-login input,
+.admin-panel input,
+.shell:has(.admin-panel) .dialog-card input,
+.shell:has(.admin-panel) .dialog-card select {
+  background: rgba(255, 255, 255, .05);
+  border-color: rgba(198, 163, 106, .25);
+  color: #F5EBDD;
+}
+.admin-login input:focus,
+.admin-panel input:focus,
+.shell:has(.admin-panel) .dialog-card input:focus,
+.shell:has(.admin-panel) .dialog-card select:focus {
+  outline: none;
+  border-color: #C6A36A;
+  box-shadow: 0 0 0 3px rgba(198, 163, 106, .14);
+}
+.admin-login .primary,
+.admin-panel .primary,
+.shell:has(.admin-panel) .dialog-card .primary {
+  background: #C6A36A;
+  border-color: #C6A36A;
+  color: #111111;
+  box-shadow: 0 14px 30px rgba(198, 163, 106, .18);
+  font-weight: 900;
+}
+.admin-login .primary:hover,
+.admin-panel .primary:hover,
+.shell:has(.admin-panel) .dialog-card .primary:hover {
+  background: #D6B37A;
+  border-color: #D6B37A;
+}
+.admin-panel .ghost,
+.shell:has(.admin-panel) .dialog-card .ghost {
+  background: rgba(17, 17, 17, .28);
+  border-color: rgba(198, 163, 106, .34);
+  color: #C6A36A;
+}
+.admin-panel .ghost:hover,
+.shell:has(.admin-panel) .dialog-card .ghost:hover {
+  background: rgba(58, 42, 31, .62);
+  border-color: rgba(198, 163, 106, .55);
+}
+.admin-tabs {
+  border-bottom: 1px solid rgba(198, 163, 106, .12);
+}
+.admin-tab {
+  background: rgba(30, 26, 23, .82);
+  border-color: rgba(198, 163, 106, .18);
+  color: #E6D7C6;
+}
+.admin-tab:hover {
+  background: rgba(58, 42, 31, .86);
+  border-color: rgba(198, 163, 106, .34);
+}
+.admin-tab.active {
+  background: #C6A36A;
+  border-color: #C6A36A;
+  color: #111111;
+}
+.admin-tab.active .barber-avatar,
+.admin-tab.active .any-avatar {
+  border-color: rgba(17, 17, 17, .28);
+  background: #E7DED2;
+  color: #111111;
+}
+.stats span {
+  background: rgba(30, 26, 23, .74);
+  border-color: rgba(198, 163, 106, .18);
+  color: #B89F82;
+}
+.stats strong {
+  color: #F5EBDD;
+}
+.agenda-wrap {
+  border-color: rgba(198, 163, 106, .18);
+  background: rgba(17, 17, 17, .20);
+}
+.agenda-head {
+  background: #111111;
+  color: #C6A36A;
+}
+.agenda-row {
+  border-top-color: rgba(198, 163, 106, .12);
+  background: rgba(30, 26, 23, .78);
+}
+.agenda-row.free {
+  background: rgba(30, 26, 23, .64);
+}
+.agenda-row.booked {
+  background: rgba(58, 42, 31, .72);
+}
+.agenda-row.blocked {
+  background: rgba(55, 50, 47, .74);
+}
+.agenda-row strong {
+  color: #F5EBDD;
+}
+.agenda-row span {
+  color: #D8C7B4;
+}
+.agenda-row .barber-label,
+.agenda-row .barber-label span {
+  color: #F5EBDD;
+}
+.status.free {
+  color: #D8F1E3;
+  background: rgba(36, 116, 91, .34);
+}
+.status.booked {
+  color: #111111;
+  background: #C6A36A;
+}
+.status.blocked {
+  color: #F5D1CB;
+  background: rgba(162, 59, 50, .34);
+}
+.row-actions button {
+  background: rgba(17, 17, 17, .30);
+  border-color: rgba(198, 163, 106, .30);
+  color: #C6A36A;
+  font-weight: 800;
+}
+.row-actions button:hover {
+  background: #C6A36A;
+  border-color: #C6A36A;
+  color: #111111;
+}
+.shell:has(.admin-panel) .modal-layer {
+  background: rgba(17, 17, 17, .70);
+}
+.shell:has(.admin-panel) .dialog-card {
+  background: rgba(45, 32, 24, .98);
+  border-color: rgba(198, 163, 106, .20);
+  color: #E6D7C6;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .46);
+}
+.shell:has(.admin-panel) .dialog-card h3 {
+  color: #F5EBDD;
+  font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+}
+.shell:has(.admin-panel) .dialog-card label {
+  color: #B89F82;
+}
 .modal-layer { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(21,17,13,.38); backdrop-filter: blur(4px); z-index: 10; padding: 18px; }
 .dialog-card { display: grid; gap: 14px; width: min(520px, 100%); padding: 22px; background: var(--paper); border-radius: 22px; border: 1px solid var(--line); }
 .dialog-card menu { display: flex; justify-content: flex-end; gap: 10px; padding: 0; margin: 4px 0 0; }
