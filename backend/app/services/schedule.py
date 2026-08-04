@@ -1,4 +1,4 @@
-﻿from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from hashlib import sha256
 from secrets import token_urlsafe
 from zoneinfo import ZoneInfo
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..models.appointment import Appointment
 from ..models.barber import Barber
+from ..models.barber_service import BarberService
 from ..models.block import BlockedSlot
 from ..models.client import Client
 from ..models.service import Service
@@ -67,8 +68,14 @@ def validate_slot(slot_date: date, slot_time: time) -> None:
         )
 
 
-def active_barbers(db: Session) -> list[Barber]:
-    return db.scalars(select(Barber).where(Barber.active.is_(True)).order_by(Barber.order, Barber.id)).all()
+def active_barbers(db: Session, service_id: int | None = None) -> list[Barber]:
+    statement = select(Barber).where(Barber.active.is_(True))
+    if service_id is not None:
+        statement = statement.join(BarberService, BarberService.barber_id == Barber.id).where(
+            BarberService.service_id == service_id,
+            BarberService.active.is_(True),
+        )
+    return db.scalars(statement.order_by(Barber.order, Barber.id)).all()
 
 
 def get_active_barber(db: Session, barber_id: int) -> Barber:
@@ -76,6 +83,24 @@ def get_active_barber(db: Session, barber_id: int) -> Barber:
     if not barber or not barber.active:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Peluquero no encontrado.")
     return barber
+
+
+def get_active_barber_service(db: Session, barber_id: int, service_id: int) -> BarberService:
+    offering = db.scalar(
+        select(BarberService)
+        .join(Service, Service.id == BarberService.service_id)
+        .join(Barber, Barber.id == BarberService.barber_id)
+        .where(
+            BarberService.barber_id == barber_id,
+            BarberService.service_id == service_id,
+            BarberService.active.is_(True),
+            Service.active.is_(True),
+            Barber.active.is_(True),
+        )
+    )
+    if not offering:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Servicio no disponible para ese peluquero.")
+    return offering
 
 
 def appointment_to_read(appointment: Appointment) -> AppointmentRead:
@@ -89,7 +114,7 @@ def appointment_to_read(appointment: Appointment) -> AppointmentRead:
         barber_name=appointment.barber.name,
         service_id=appointment.service_id,
         service_name=appointment.service.name,
-        service_price=appointment.service.price,
+        service_price=appointment.service_price,
         client_id=appointment.client_id,
         client_first_name=appointment.client.first_name,
         client_last_name=appointment.client.last_name,
@@ -104,7 +129,7 @@ def appointment_to_public_cancellation(appointment: Appointment) -> PublicCancel
         status=appointment.status,
         barber_name=appointment.barber.name,
         service_name=appointment.service.name,
-        service_price=appointment.service.price,
+        service_price=appointment.service_price,
         client_first_name=appointment.client.first_name,
         client_last_name=appointment.client.last_name,
     )
@@ -150,7 +175,7 @@ def ensure_available(db: Session, slot_date: date, slot_time: time, barber_id: i
         raise HTTPException(status.HTTP_409_CONFLICT, "El horario ya no esta disponible para ese peluquero.")
 
 
-def available_slots(db: Session, slot_date: date, barber_id: int | None = None) -> list[time]:
+def available_slots(db: Session, slot_date: date, barber_id: int | None = None, service_id: int | None = None) -> list[time]:
     if slot_date.weekday() not in (1, 2, 3, 4, 5):
         return []
     slots = {slot for slot in generate_slots() if is_future_slot(slot_date, slot)}
@@ -159,6 +184,8 @@ def available_slots(db: Session, slot_date: date, barber_id: int | None = None) 
     slots -= blocked
     if barber_id is not None:
         get_active_barber(db, barber_id)
+        if service_id is not None:
+            get_active_barber_service(db, barber_id, service_id)
         appointments = db.scalars(
             select(Appointment).where(
                 Appointment.date == slot_date,
@@ -169,7 +196,7 @@ def available_slots(db: Session, slot_date: date, barber_id: int | None = None) 
         occupied = {item.start_time for item in appointments}
         return sorted(slots - occupied)
 
-    barbers = active_barbers(db)
+    barbers = active_barbers(db, service_id)
     if not barbers:
         return []
     appointments = db.scalars(
@@ -186,13 +213,17 @@ def available_slots(db: Session, slot_date: date, barber_id: int | None = None) 
     return sorted(available)
 
 
-def available_barbers_for_slot(db: Session, slot_date: date, slot_time: time) -> list[Barber]:
+def available_barbers_for_slot(db: Session, slot_date: date, slot_time: time, service_id: int) -> list[Barber]:
     validate_slot(slot_date, slot_time)
-    return [barber for barber in active_barbers(db) if is_barber_available(db, slot_date, slot_time, barber.id)]
+    return [
+        barber
+        for barber in active_barbers(db, service_id)
+        if is_barber_available(db, slot_date, slot_time, barber.id)
+    ]
 
 
-def choose_available_barber(db: Session, slot_date: date, slot_time: time) -> Barber:
-    candidates = available_barbers_for_slot(db, slot_date, slot_time)
+def choose_available_barber(db: Session, slot_date: date, slot_time: time, service_id: int) -> Barber:
+    candidates = available_barbers_for_slot(db, slot_date, slot_time, service_id)
     if not candidates:
         raise HTTPException(status.HTTP_409_CONFLICT, "El horario ya no esta disponible.")
     counts = dict(
@@ -206,13 +237,12 @@ def choose_available_barber(db: Session, slot_date: date, slot_time: time) -> Ba
 
 
 def create_appointment(db: Session, payload: AppointmentCreate, origin: str) -> Appointment:
-    service = db.get(Service, payload.service_id)
-    if not service or not service.active:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Servicio no encontrado.")
+    if payload.barber_id is not None:
+        barber = get_active_barber(db, payload.barber_id)
+    else:
+        barber = choose_available_barber(db, payload.date, payload.start_time, payload.service_id)
 
-    barber = get_active_barber(db, payload.barber_id) if payload.barber_id is not None else choose_available_barber(
-        db, payload.date, payload.start_time
-    )
+    offering = get_active_barber_service(db, barber.id, payload.service_id)
     ensure_available(db, payload.date, payload.start_time, barber.id)
 
     client = Client(
@@ -223,8 +253,9 @@ def create_appointment(db: Session, payload: AppointmentCreate, origin: str) -> 
     cancellation_token, cancellation_token_hash = generate_unique_cancellation_token(db)
     appointment = Appointment(
         client=client,
-        service=service,
+        service=offering.service,
         barber=barber,
+        service_price=offering.price,
         date=payload.date,
         start_time=payload.start_time,
         status="Confirmado",

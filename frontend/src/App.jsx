@@ -54,6 +54,11 @@ function formatPrice(value) {
   return `$ ${new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(amount)}`;
 }
 
+function formatServicePrice(service) {
+  const price = formatPrice(service?.price);
+  return service?.is_from_price ? `Desde ${price}` : price;
+}
+
 function cancellationLink(token) {
   return `${window.location.origin}/cancelar/${encodeURIComponent(token)}`;
 }
@@ -222,7 +227,7 @@ function Summary({ barber, service, date, time, customer, phone }) {
     <div className="summary">
       {barber ? <div><span>Peluquero</span><strong><BarberLabel name={barberName} /></strong></div> : null}
       <div><span>Servicio</span><strong>{service?.name || "-"}</strong></div>
-      <div><span>Precio</span><strong>{formatPrice(service?.price)}</strong></div>
+      <div><span>Precio</span><strong>{formatServicePrice(service)}</strong></div>
       <div><span>Fecha</span><strong>{date ? formatDate(date) : "-"}</strong></div>
       <div><span>Hora</span><strong>{time ? timeLabel(time) : "-"}</strong></div>
       {customer ? <div><span>Cliente</span><strong>{customer}</strong></div> : null}
@@ -287,6 +292,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!barberId) return;
+    const queryBarber = barberId === ANY_BARBER ? null : barberId;
+    api.services(queryBarber).then(setServices).catch((err) => setError(err.message));
+  }, [barberId]);
+
+  useEffect(() => {
     if (!adminBarberTab && barbers.length) setAdminBarberTab(String(barbers[0].id));
   }, [adminBarberTab, barbers]);
 
@@ -307,13 +318,13 @@ export default function App() {
   useEffect(() => {
     if (step === "time" && date) {
       const queryBarber = barberId === ANY_BARBER ? null : barberId;
-      const nextAvailabilityKey = `${date}:${queryBarber || ANY_BARBER}`;
+      const nextAvailabilityKey = `${date}:${queryBarber || ANY_BARBER}:${serviceId}`;
       if (availabilityKey === nextAvailabilityKey) return;
       const requestKey = `${nextAvailabilityKey}:${availabilityRetry}`;
       availabilityRequestRef.current = requestKey;
       setLoadingAvailability(true);
       setAvailabilityError("");
-      api.availability(date, queryBarber)
+      api.availability(date, queryBarber, serviceId)
         .then((slots) => {
           if (availabilityRequestRef.current !== requestKey) return;
           setAvailable(slots);
@@ -331,11 +342,17 @@ export default function App() {
           }
         });
     }
-  }, [step, date, barberId, availabilityKey, availabilityRetry]);
+  }, [step, date, barberId, serviceId, availabilityKey, availabilityRetry]);
 
   useEffect(() => {
     if (view === "admin" && token) refreshAgenda();
   }, [view, token, adminDate]);
+
+  useEffect(() => {
+    if (view === "admin") {
+      api.services().then(setServices).catch((err) => setError(err.message));
+    }
+  }, [view]);
 
   const stats = useMemo(() => ({
     free: visibleAgenda.filter((slot) => slot.status === "Libre").length,
@@ -664,7 +681,7 @@ export default function App() {
                       <strong>{barber.name}</strong>
                       <span>{barber.description}</span>
                     </div>
-                    <button className="primary" onClick={() => { setBarberId(barber.id); setServiceId(null); setDate(null); setTime(null); resetAvailabilityState(); setStep("service"); }}>Elegir</button>
+                    <button className="primary" onClick={() => { setServices([]); setBarberId(barber.id); setServiceId(null); setDate(null); setTime(null); resetAvailabilityState(); setStep("service"); }}>Elegir</button>
                   </article>
                 ))}
                 <article className={`barber-card ${barberId === ANY_BARBER ? "selected" : ""}`}>
@@ -673,7 +690,7 @@ export default function App() {
                     <strong>Sin preferencia</strong>
                     <span>Asignamos automáticamente un peluquero disponible.</span>
                   </div>
-                  <button className="primary" onClick={() => { setBarberId(ANY_BARBER); setServiceId(null); setDate(null); setTime(null); resetAvailabilityState(); setStep("service"); }}>Elegir</button>
+                  <button className="primary" onClick={() => { setServices([]); setBarberId(ANY_BARBER); setServiceId(null); setDate(null); setTime(null); resetAvailabilityState(); setStep("service"); }}>Elegir</button>
                 </article>
               </div>
             </section>
@@ -682,12 +699,13 @@ export default function App() {
           {step === "service" && (
             <section className="panel">
               <div className="step-head"><p className="eyebrow">Paso 2</p><h2>Elegí el servicio</h2><p>Peluquero: <strong>{currentBarberName}</strong></p></div>
+              {barberId === ANY_BARBER ? <p className="field-help">El precio final depende del profesional asignado.</p> : null}
               <div className="service-grid">
-                {services.map((service) => (
-                  <button key={service.id} className={`service-card ${serviceId === service.id ? "selected" : ""}`} onClick={() => { setServiceId(service.id); setDate(null); setTime(null); resetAvailabilityState(); setStep("date"); }}>
-                    <strong>{service.name}</strong><span>{service.duration_minutes} minutos · {formatPrice(service.price)}</span>
+                {services.length ? services.map((service) => (
+                  <button key={service.service_id || service.id} className={`service-card ${serviceId === service.id ? "selected" : ""}`} onClick={() => { setServiceId(service.id); setDate(null); setTime(null); resetAvailabilityState(); setStep("date"); }}>
+                    <strong>{service.name}</strong><span>{service.duration_minutes} minutos · {formatServicePrice(service)}</span>
                   </button>
-                ))}
+                )) : <p className="availability-state">Cargando servicios...</p>}
               </div>
               <div className="step-actions single">
                 <button className="ghost" onClick={goBackToBarber}>← Volver</button>
@@ -751,6 +769,7 @@ export default function App() {
                   <span className={phoneError ? "field-error" : "field-help"}>{phoneError || "Ingresá código de área y número."}</span>
                 </label>
                 <Summary barber={currentBarberName} service={selectedService} date={date} time={time} customer={`${client.first_name} ${client.last_name}`.trim()} />
+                {barberId === ANY_BARBER ? <p className="field-help">El precio final depende del profesional asignado y se confirma al guardar el turno.</p> : null}
                 <div className="step-actions">
                   <button className="ghost" type="button" onClick={goBackToTime}>← Volver</button>
                   <button className="primary" type="submit" disabled={bookingPending || Boolean(phoneError)}>{bookingPending ? "Confirmando turno..." : "Confirmar turno"}</button>
@@ -858,7 +877,7 @@ export default function App() {
             <label>Nombre<input required value={manual.first_name} onChange={(e) => setManual({ ...manual, first_name: e.target.value })} /></label>
             <label>Apellido<input value={manual.last_name} onChange={(e) => setManual({ ...manual, last_name: e.target.value })} /></label>
             <label>Teléfono <span>opcional</span><input value={manual.phone} onChange={(e) => setManual({ ...manual, phone: e.target.value })} /></label>
-            <label>Servicio<select value={manual.service_id} onChange={(e) => setManual({ ...manual, service_id: e.target.value })}>{services.map((service) => <option key={service.id} value={service.id}>{service.name} · {formatPrice(service.price)}</option>)}</select></label>
+            <label>Servicio<select value={manual.service_id} onChange={(e) => setManual({ ...manual, service_id: e.target.value })}>{services.map((service) => <option key={service.id} value={service.id}>{service.name} · {formatServicePrice(service)}</option>)}</select></label>
             <menu><button type="button" className="ghost" onClick={() => setManual(null)}>Cerrar</button><button className="primary" type="submit">Guardar</button></menu>
           </form>
         </div>

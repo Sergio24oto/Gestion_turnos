@@ -23,11 +23,15 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  services: () => request("/services"),
+  services: (barberId = null) => {
+    const suffix = barberId ? `?barber_id=${encodeURIComponent(barberId)}` : "";
+    return request(`/services${suffix}`);
+  },
   barbers: () => request("/barbers"),
-  availability: (date, barberId = null) => {
+  availability: (date, barberId = null, serviceId = null) => {
     const suffix = barberId ? `&barber_id=${encodeURIComponent(barberId)}` : "";
-    return request(`/availability?date=${date}${suffix}`);
+    const serviceSuffix = serviceId ? `&service_id=${encodeURIComponent(serviceId)}` : "";
+    return request(`/availability?date=${date}${suffix}${serviceSuffix}`);
   },
   createAppointment: (payload) => request("/appointments", { method: "POST", body: JSON.stringify(payload) }),
   login: (payload) => request("/auth/login", { method: "POST", body: JSON.stringify(payload) }),

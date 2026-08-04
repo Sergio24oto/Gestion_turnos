@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .models.admin_user import AdminUser
 from .models.barber import Barber
+from .models.barber_service import BarberService
 from .models.service import Service
 from .services.auth import hash_password
 
@@ -33,6 +34,21 @@ def seed_initial_data(db: Session) -> None:
         exists = db.scalar(select(Barber).where(Barber.name == name))
         if not exists:
             db.add(Barber(name=name, description=description, photo_url=photo_url, active=True, order=order))
+
+    db.flush()
+
+    barbers = db.scalars(select(Barber).where(Barber.active.is_(True))).all()
+    services = db.scalars(select(Service).where(Service.active.is_(True))).all()
+    for barber in barbers:
+        for service in services:
+            exists = db.scalar(
+                select(BarberService).where(
+                    BarberService.barber_id == barber.id,
+                    BarberService.service_id == service.id,
+                )
+            )
+            if not exists:
+                db.add(BarberService(barber=barber, service=service, price=Decimal("0.00"), active=True))
 
     admin = db.scalar(select(AdminUser).where(AdminUser.username == settings.admin_default_user))
     if not admin:

@@ -1,6 +1,7 @@
-﻿from datetime import date, datetime, time
+from datetime import date, datetime, time
+from decimal import Decimal
 
-from sqlalchemy import Computed, Date, DateTime, Enum, ForeignKey, Index, Integer, String, Time, func
+from sqlalchemy import Computed, Date, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Time, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
@@ -17,6 +18,12 @@ class Appointment(Base):
     client_id: Mapped[int] = mapped_column("cliente_id", ForeignKey("clientes.id"), nullable=False)
     service_id: Mapped[int] = mapped_column("servicio_id", ForeignKey("servicios.id"), nullable=False)
     barber_id: Mapped[int] = mapped_column("peluquero_id", ForeignKey("peluqueros.id"), nullable=False, index=True)
+    service_price: Mapped[Decimal] = mapped_column(
+        "precio_servicio",
+        Numeric(10, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+    )
     date: Mapped[date] = mapped_column("fecha", Date, nullable=False, index=True)
     start_time: Mapped[time] = mapped_column("hora_inicio", Time, nullable=False)
     status: Mapped[str] = mapped_column(

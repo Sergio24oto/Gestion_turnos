@@ -13,6 +13,7 @@ router = APIRouter(prefix="/availability", tags=["availability"])
 def get_availability(
     date_: date = Query(alias="date"),
     barber_id: int | None = Query(default=None),
+    service_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    return available_slots(db, date_, barber_id)
+    return available_slots(db, date_, barber_id, service_id)
