@@ -168,6 +168,65 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 .cancellation-page { display: grid; gap: 18px; }
 .cancellation-page .summary { text-align: left; }
 .cancel-question { margin: 0 auto; }.empty, .error { color: var(--bad); font-weight: 700; }
+.cancellation-page {
+  color: #E6D7C6;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(198, 163, 106, .12), transparent 34%),
+    rgba(45, 32, 24, .92);
+  border: 1px solid rgba(198, 163, 106, .18);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .38);
+  backdrop-filter: blur(14px);
+}
+.cancellation-page h2 {
+  color: #F5EBDD;
+  font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+}
+.cancellation-page .eyebrow {
+  color: #C6A36A;
+}
+.cancellation-page .lead,
+.cancellation-page .cancel-question {
+  color: #D8C7B4;
+}
+.cancellation-page .summary {
+  background: rgba(30, 26, 23, .78);
+  border-color: rgba(198, 163, 106, .18);
+  color: #F1ECE6;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, .24);
+}
+.cancellation-page .summary span {
+  color: #B89F82;
+}
+.cancellation-page .summary strong,
+.cancellation-page .summary .barber-label,
+.cancellation-page .summary .barber-label span {
+  color: #F5EBDD;
+}
+.cancellation-page .primary {
+  background: #C6A36A;
+  border-color: #C6A36A;
+  color: #111111;
+  box-shadow: 0 14px 30px rgba(198, 163, 106, .18);
+  font-weight: 900;
+}
+.cancellation-page .primary:hover {
+  background: #D6B37A;
+  border-color: #D6B37A;
+}
+.cancellation-page .ghost {
+  background: rgba(17, 17, 17, .28);
+  border-color: rgba(198, 163, 106, .34);
+  color: #C6A36A;
+}
+.cancellation-page .ghost:hover {
+  background: rgba(58, 42, 31, .62);
+  border-color: rgba(198, 163, 106, .55);
+}
+.cancellation-page .success-mark {
+  background: rgba(198, 163, 106, .18);
+  border: 1px solid rgba(198, 163, 106, .38);
+  color: #C6A36A;
+}
 .global-error { border: 1px solid #e0b6b0; background: #fff3f1; padding: 12px 16px; border-radius: 16px; }
 .admin-login { display: grid; grid-template-columns: 1fr minmax(260px, 420px); gap: 28px; align-items: start; }
 .toolbar-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
