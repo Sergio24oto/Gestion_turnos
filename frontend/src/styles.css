@@ -232,6 +232,28 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 .global-error { border: 1px solid #e0b6b0; background: #fff3f1; padding: 12px 16px; border-radius: 16px; }
 .admin-login { display: grid; grid-template-columns: 1fr minmax(260px, 420px); gap: 28px; align-items: start; }
 .toolbar-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.admin-section-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(198, 163, 106, .12);
+  overflow-x: auto;
+}
+.admin-section-tab {
+  min-height: 44px;
+  border: 1px solid rgba(198, 163, 106, .18);
+  border-radius: 999px;
+  background: rgba(30, 26, 23, .82);
+  color: #E6D7C6;
+  padding: 0 18px;
+  font-weight: 900;
+}
+.admin-section-tab.active {
+  background: #C6A36A;
+  border-color: #C6A36A;
+  color: #111111;
+}
 .admin-tabs {
   display: flex; gap: 8px; overflow-x: auto; padding: 0 0 12px; margin: 0 0 14px;
   scrollbar-width: thin;
@@ -259,6 +281,63 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 .status.blocked { color: var(--bad); background: #f5dedb; }
 .row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .row-actions button { min-height: 36px; border-radius: 999px; border: 1px solid var(--line); background: #fffdf8; }
+.services-admin { display: grid; gap: 16px; }
+.services-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 220px) auto;
+  gap: 10px;
+  align-items: center;
+}
+.services-list { display: grid; gap: 12px; }
+.admin-service-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid rgba(198, 163, 106, .18);
+  border-radius: 18px;
+  background: rgba(30, 26, 23, .78);
+}
+.admin-service-card.inactive { opacity: .72; }
+.admin-service-card strong { color: #F5EBDD; font-size: 18px; }
+.admin-service-card span,
+.admin-service-card p { color: #B89F82; }
+.admin-service-card p { margin: 6px 0 0; line-height: 1.45; }
+.service-admin-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.service-admin-meta span,
+.admin-success {
+  border: 1px solid rgba(198, 163, 106, .18);
+  border-radius: 999px;
+  background: rgba(17, 17, 17, .28);
+  color: #E6D7C6;
+  padding: 8px 11px;
+  font-weight: 800;
+}
+.admin-success {
+  width: fit-content;
+  margin: 0;
+  color: #D8F1E3;
+  border-color: rgba(36, 116, 91, .34);
+  background: rgba(36, 116, 91, .22);
+}
+.service-dialog p { margin: 0; color: #B89F82; line-height: 1.5; }
+.toggle-row {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 10px;
+}
+.toggle-row input {
+  width: 20px;
+  height: 20px;
+  accent-color: #C6A36A;
+}
 .admin-login.panel,
 .admin-panel {
   color: #E6D7C6;
@@ -287,6 +366,7 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 }
 .admin-login input,
 .admin-panel input,
+.admin-panel select,
 .shell:has(.admin-panel) .dialog-card input,
 .shell:has(.admin-panel) .dialog-card select {
   background: rgba(255, 255, 255, .05);
@@ -295,6 +375,7 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 }
 .admin-login input:focus,
 .admin-panel input:focus,
+.admin-panel select:focus,
 .shell:has(.admin-panel) .dialog-card input:focus,
 .shell:has(.admin-panel) .dialog-card select:focus {
   outline: none;
@@ -494,6 +575,13 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
   .availability-header, .admin-toolbar, .admin-login { display: block; }
   .toolbar-actions { justify-content: stretch; margin-top: 14px; }
   .toolbar-actions > * { flex: 1 1 190px; }
+  .services-toolbar,
+  .admin-service-card {
+    grid-template-columns: 1fr;
+  }
+  .service-admin-meta {
+    justify-content: flex-start;
+  }
   .time-grid { grid-template-columns: 1fr; }
   .confirmation-actions, .step-actions { display: grid; }
   .confirmation-actions button, .step-actions button { width: 100%; }

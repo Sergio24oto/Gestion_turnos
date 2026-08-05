@@ -8,6 +8,11 @@ const ANY_BARBER = "any";
 const ALL_BARBERS = "all";
 const BUSINESS_NAME = "Marcelo Navarro";
 const RESERVATION_STEPS = ["barber", "service", "date", "time", "details"];
+const SERVICE_FILTERS = {
+  active: "Activos",
+  inactive: "Inactivos",
+  all: "Todos",
+};
 
 const BARBER_VISUALS = {
   marcelo: {
@@ -295,11 +300,19 @@ export default function App() {
   const [error, setError] = useState("");
   const [token, setToken] = useState(localStorage.getItem("adminToken") || "");
   const [login, setLogin] = useState({ username: "admin", password: "" });
+  const [adminSection, setAdminSection] = useState("agenda");
   const [adminDate, setAdminDate] = useState(firstOpenDate());
   const [adminBarberTab, setAdminBarberTab] = useState(null);
   const [agenda, setAgenda] = useState([]);
   const [manual, setManual] = useState(null);
   const [manualServices, setManualServices] = useState([]);
+  const [adminServices, setAdminServices] = useState([]);
+  const [serviceSearch, setServiceSearch] = useState("");
+  const [serviceFilter, setServiceFilter] = useState("active");
+  const [serviceForm, setServiceForm] = useState(null);
+  const [serviceConfirm, setServiceConfirm] = useState(null);
+  const [serviceSaving, setServiceSaving] = useState(false);
+  const [serviceMessage, setServiceMessage] = useState("");
   const [cancelToken] = useState(cancellationTokenFromPath());
   const [cancelAppointmentData, setCancelAppointmentData] = useState(null);
   const [cancelStatus, setCancelStatus] = useState("loading");
@@ -319,6 +332,17 @@ export default function App() {
     () => barbers.map((barber) => ({ barber, slots: agenda.filter((slot) => slot.barber_id === barber.id) })),
     [agenda, barbers]
   );
+  const visibleAdminServices = useMemo(() => {
+    const query = serviceSearch.trim().toLowerCase();
+    return adminServices.filter((service) => {
+      const matchesSearch = !query || service.name.toLowerCase().includes(query);
+      const matchesFilter =
+        serviceFilter === "all" ||
+        (serviceFilter === "active" && service.active) ||
+        (serviceFilter === "inactive" && !service.active);
+      return matchesSearch && matchesFilter;
+    });
+  }, [adminServices, serviceFilter, serviceSearch]);
   const isReservationFlow = view === "client" && RESERVATION_STEPS.includes(step);
   const currentReservationStep = reservationStepNumber(step);
   const reservationProgress = currentReservationStep ? `${currentReservationStep * 20}%` : "0%";
@@ -386,6 +410,10 @@ export default function App() {
   }, [view, token, adminDate]);
 
   useEffect(() => {
+    if (view === "admin" && token && adminSection === "services") loadAdminServices();
+  }, [view, token, adminSection]);
+
+  useEffect(() => {
     if (view === "admin") {
       api.services().then(setServices).catch((err) => setError(err.message));
     }
@@ -426,9 +454,80 @@ export default function App() {
     }
   }
 
+  async function loadAdminServices() {
+    try {
+      setAdminServices(await api.adminServices());
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   function showCopyFeedback(message) {
     setCopyMessage(message);
     window.setTimeout(() => setCopyMessage(""), 2500);
+  }
+
+  function openNewServiceForm() {
+    setServiceMessage("");
+    setServiceForm({ mode: "create", name: "", description: "", category: "", active: true });
+  }
+
+  function openEditServiceForm(service) {
+    setServiceMessage("");
+    setServiceForm({
+      mode: "edit",
+      id: service.id,
+      name: service.name,
+      description: service.description || "",
+      category: service.category || "",
+      active: service.active,
+    });
+  }
+
+  async function submitServiceForm(event) {
+    event.preventDefault();
+    if (!serviceForm || serviceSaving) return;
+    setServiceSaving(true);
+    setError("");
+    setServiceMessage("");
+    const payload = {
+      name: serviceForm.name,
+      description: serviceForm.description || null,
+      category: serviceForm.category || null,
+      active: serviceForm.active,
+    };
+    try {
+      if (serviceForm.mode === "edit") {
+        await api.updateAdminService(serviceForm.id, payload);
+        setServiceMessage("Servicio actualizado.");
+      } else {
+        await api.createAdminService(payload);
+        setServiceMessage("Servicio creado. Para que aparezca en reservas, asignalo a un profesional en la configuración de servicios por peluquero.");
+      }
+      setServiceForm(null);
+      await loadAdminServices();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setServiceSaving(false);
+    }
+  }
+
+  async function confirmServiceStatusChange() {
+    if (!serviceConfirm || serviceSaving) return;
+    setServiceSaving(true);
+    setError("");
+    setServiceMessage("");
+    try {
+      await api.updateAdminServiceStatus(serviceConfirm.id, { active: !serviceConfirm.active });
+      setServiceMessage(serviceConfirm.active ? "Servicio desactivado." : "Servicio reactivado.");
+      setServiceConfirm(null);
+      await loadAdminServices();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setServiceSaving(false);
+    }
   }
 
   async function submitBooking(event) {
@@ -853,45 +952,86 @@ export default function App() {
           ) : (
             <section className="admin-panel">
               <div className="admin-toolbar">
-                <div><p className="eyebrow">Agenda</p><h2>Agenda - {formatDate(adminDate)}</h2></div>
+                <div><p className="eyebrow">Panel privado</p><h2>{adminSection === "agenda" ? `Agenda - ${formatDate(adminDate)}` : "Servicios"}</h2></div>
                 <div className="toolbar-actions">
-                  <input type="date" value={adminDate} onChange={(e) => setAdminDate(e.target.value)} />
+                  {adminSection === "agenda" ? <input type="date" value={adminDate} onChange={(e) => setAdminDate(e.target.value)} /> : null}
                   <button className="ghost" onClick={() => { localStorage.removeItem("adminToken"); setToken(""); }}>Salir</button>
                 </div>
               </div>
-              <div className="stats">
-                <span><strong>{stats.free}</strong> libres</span>
-                <span><strong>{stats.booked}</strong> reservados</span>
-                <span><strong>{stats.blocked}</strong> bloqueados</span>
+              <div className="admin-section-tabs" role="tablist" aria-label="Panel administrador">
+                <button className={`admin-section-tab ${adminSection === "agenda" ? "active" : ""}`} onClick={() => setAdminSection("agenda")}>Agenda</button>
+                <button className={`admin-section-tab ${adminSection === "services" ? "active" : ""}`} onClick={() => setAdminSection("services")}>Servicios</button>
               </div>
-              <div className="admin-tabs" role="tablist" aria-label="Peluqueros">
-                {barbers.map((barber) => (
-                  <button key={barber.id} className={`admin-tab ${adminBarberTab === String(barber.id) ? "active" : ""}`} onClick={() => setAdminBarberTab(String(barber.id))}>
-                    <BarberAvatar barber={barber} />
-                    <span>{barber.name}</span>
-                  </button>
-                ))}
-                <button className={`admin-tab ${adminBarberTab === ALL_BARBERS ? "active" : ""}`} onClick={() => setAdminBarberTab(ALL_BARBERS)}>
-                  <span className="any-avatar sm">T</span>
-                  <span>Todos</span>
-                </button>
-              </div>
-              {adminBarberTab === ALL_BARBERS ? (
-                <div className="agenda-groups">
-                  {groupedAgenda.map(({ barber, slots }) => (
-                    <section key={barber.id} className="agenda-group">
-                      <h3><BarberLabel barber={barber} /></h3>
-                      <div className="agenda-wrap">
-                        <div className="agenda-head"><span>Hora</span><span>Fin</span><span>Peluquero</span><span>Cliente</span><span>Servicio</span><span>Estado</span><span>Acciones</span></div>
-                        <div className="agenda-rows">{renderAgendaRows(slots)}</div>
-                      </div>
-                    </section>
-                  ))}
-                </div>
+
+              {adminSection === "agenda" ? (
+                <>
+                  <div className="stats">
+                    <span><strong>{stats.free}</strong> libres</span>
+                    <span><strong>{stats.booked}</strong> reservados</span>
+                    <span><strong>{stats.blocked}</strong> bloqueados</span>
+                  </div>
+                  <div className="admin-tabs" role="tablist" aria-label="Peluqueros">
+                    {barbers.map((barber) => (
+                      <button key={barber.id} className={`admin-tab ${adminBarberTab === String(barber.id) ? "active" : ""}`} onClick={() => setAdminBarberTab(String(barber.id))}>
+                        <BarberAvatar barber={barber} />
+                        <span>{barber.name}</span>
+                      </button>
+                    ))}
+                    <button className={`admin-tab ${adminBarberTab === ALL_BARBERS ? "active" : ""}`} onClick={() => setAdminBarberTab(ALL_BARBERS)}>
+                      <span className="any-avatar sm">T</span>
+                      <span>Todos</span>
+                    </button>
+                  </div>
+                  {adminBarberTab === ALL_BARBERS ? (
+                    <div className="agenda-groups">
+                      {groupedAgenda.map(({ barber, slots }) => (
+                        <section key={barber.id} className="agenda-group">
+                          <h3><BarberLabel barber={barber} /></h3>
+                          <div className="agenda-wrap">
+                            <div className="agenda-head"><span>Hora</span><span>Fin</span><span>Peluquero</span><span>Cliente</span><span>Servicio</span><span>Estado</span><span>Acciones</span></div>
+                            <div className="agenda-rows">{renderAgendaRows(slots)}</div>
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="agenda-wrap">
+                      <div className="agenda-head"><span>Hora</span><span>Fin</span><span>Peluquero</span><span>Cliente</span><span>Servicio</span><span>Estado</span><span>Acciones</span></div>
+                      <div className="agenda-rows">{renderAgendaRows(visibleAgenda)}</div>
+                    </div>
+                  )}
+                </>
               ) : (
-                <div className="agenda-wrap">
-                  <div className="agenda-head"><span>Hora</span><span>Fin</span><span>Peluquero</span><span>Cliente</span><span>Servicio</span><span>Estado</span><span>Acciones</span></div>
-                  <div className="agenda-rows">{renderAgendaRows(visibleAgenda)}</div>
+                <div className="services-admin">
+                  {serviceMessage ? <p className="admin-success">{serviceMessage}</p> : null}
+                  <div className="services-toolbar">
+                    <input type="search" placeholder="Buscar servicio" value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} />
+                    <select value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)}>
+                      {Object.entries(SERVICE_FILTERS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                    <button className="primary" onClick={openNewServiceForm}>Nuevo servicio</button>
+                  </div>
+                  <div className="services-list">
+                    {visibleAdminServices.map((service) => (
+                      <article key={service.id} className={`admin-service-card ${service.active ? "" : "inactive"}`}>
+                        <div>
+                          <strong>{service.name}</strong>
+                          <span>{service.category || "Sin categoría"}</span>
+                          {service.description ? <p>{service.description}</p> : <p>Sin descripción.</p>}
+                        </div>
+                        <div className="service-admin-meta">
+                          <span><strong>{service.assigned_barbers_count}</strong> profesionales</span>
+                          <span>{service.active ? "Activo" : "Inactivo"}</span>
+                          {service.future_appointments_count ? <span>{service.future_appointments_count} turnos futuros</span> : null}
+                        </div>
+                        <div className="row-actions">
+                          <button onClick={() => openEditServiceForm(service)}>Editar</button>
+                          <button onClick={() => setServiceConfirm(service)}>{service.active ? "Desactivar" : "Activar"}</button>
+                        </div>
+                      </article>
+                    ))}
+                    {!visibleAdminServices.length ? <p className="availability-state">No hay servicios para mostrar.</p> : null}
+                  </div>
                 </div>
               )}
             </section>
@@ -929,6 +1069,50 @@ export default function App() {
               <button className="ghost" type="button" onClick={copyCancellationLink}>Copiar enlace de cancelación</button>
             </div>
             {copyMessage ? <span className="copy-message">{copyMessage}</span> : null}
+          </section>
+        </div>
+      ) : null}
+
+      {serviceForm ? (
+        <div className="modal-layer">
+          <form className="dialog-card service-dialog" onSubmit={submitServiceForm}>
+            <div>
+              <p className="eyebrow">{serviceForm.mode === "edit" ? "Editar servicio" : "Nuevo servicio"}</p>
+              <h3>{serviceForm.mode === "edit" ? serviceForm.name : "Crear servicio"}</h3>
+            </div>
+            <label>Nombre<input required maxLength="120" value={serviceForm.name} onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })} /></label>
+            <label>Descripción<input maxLength="255" value={serviceForm.description} onChange={(e) => setServiceForm({ ...serviceForm, description: e.target.value })} /></label>
+            <label>Categoría<input maxLength="80" value={serviceForm.category} onChange={(e) => setServiceForm({ ...serviceForm, category: e.target.value })} /></label>
+            <label className="toggle-row">
+              <input type="checkbox" checked={serviceForm.active} onChange={(e) => setServiceForm({ ...serviceForm, active: e.target.checked })} />
+              <span>Servicio activo</span>
+            </label>
+            <p className="field-help">El precio, la duración y los profesionales asignados se configuran por peluquero en otra sección.</p>
+            <menu>
+              <button type="button" className="ghost" disabled={serviceSaving} onClick={() => setServiceForm(null)}>Cerrar</button>
+              <button className="primary" type="submit" disabled={serviceSaving}>{serviceSaving ? "Guardando..." : "Guardar"}</button>
+            </menu>
+          </form>
+        </div>
+      ) : null}
+
+      {serviceConfirm ? (
+        <div className="modal-layer">
+          <section className="dialog-card service-dialog">
+            <div>
+              <p className="eyebrow">{serviceConfirm.active ? "Desactivar servicio" : "Activar servicio"}</p>
+              <h3>{serviceConfirm.name}</h3>
+            </div>
+            {serviceConfirm.active ? (
+              <p>Este servicio dejará de estar disponible para nuevas reservas. Los turnos existentes no se modificarán.</p>
+            ) : (
+              <p>El servicio volverá a estar disponible solo si está asignado a un profesional activo.</p>
+            )}
+            {serviceConfirm.future_appointments_count ? <p className="field-help">Tiene {serviceConfirm.future_appointments_count} turnos futuros. No se cancelarán automáticamente.</p> : null}
+            <menu>
+              <button type="button" className="ghost" disabled={serviceSaving} onClick={() => setServiceConfirm(null)}>Volver</button>
+              <button className="primary" type="button" disabled={serviceSaving} onClick={confirmServiceStatusChange}>{serviceSaving ? "Guardando..." : serviceConfirm.active ? "Desactivar" : "Activar"}</button>
+            </menu>
           </section>
         </div>
       ) : null}
