@@ -1,6 +1,6 @@
-﻿from datetime import date, time
-
+from datetime import date, time
 from decimal import Decimal
+from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -43,13 +43,16 @@ class AppointmentRead(BaseModel):
     id: int
     date: date
     start_time: time
+    end_time: time
     status: str
     origin: str
     barber_id: int
     barber_name: str
     service_id: int
     service_name: str
-    service_price: Decimal = Field(ge=Decimal("0"), max_digits=10, decimal_places=2)
+    service_price: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    service_visible_duration_minutes: int | None = Field(default=None, gt=0)
+    service_blocking_duration_minutes: int = Field(gt=0)
     client_id: int
     client_first_name: str
     client_last_name: str
@@ -63,10 +66,13 @@ class PublicAppointmentCreated(AppointmentRead):
 class PublicCancellationAppointment(BaseModel):
     date: date
     start_time: time
+    end_time: time
     status: str
     barber_name: str
     service_name: str
-    service_price: Decimal = Field(ge=Decimal("0"), max_digits=10, decimal_places=2)
+    service_price: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    service_visible_duration_minutes: int | None = Field(default=None, gt=0)
+    service_blocking_duration_minutes: int = Field(gt=0)
     client_first_name: str
     client_last_name: str
 
@@ -79,4 +85,3 @@ class AgendaSlot(BaseModel):
     appointment: AppointmentRead | None = None
     block_id: int | None = None
     block_reason: str | None = None
-

@@ -123,6 +123,8 @@ button:disabled { cursor: not-allowed; opacity: .58; transform: none; box-shadow
 .service-card.selected, .date-card.selected, .time-button.selected { border-color: var(--accent-strong); box-shadow: inset 0 0 0 1px var(--accent-strong); }
 .service-card strong { font-size: 18px; }
 .service-card span, .date-card span { color: var(--muted); }
+.service-meta { display: grid; gap: 4px; color: var(--muted); line-height: 1.35; }
+.service-meta span { color: inherit; }
 .date-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
 .date-card { min-height: 86px; border-radius: 16px; border: 1px solid var(--line); background: #fffaf1; }
 .date-card:disabled { opacity: .38; cursor: not-allowed; background: #eee8df; }
@@ -246,7 +248,7 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 .agenda-groups { display: grid; gap: 22px; }
 .agenda-group h3 { display: flex; align-items: center; margin: 0 0 10px; font-size: 18px; }
 .agenda-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 18px; }
-.agenda-head, .agenda-row { min-width: 980px; display: grid; grid-template-columns: 82px 1.1fr 1.2fr 1.2fr 1fr 250px; gap: 10px; align-items: center; padding: 12px 14px; }
+.agenda-head, .agenda-row { min-width: 1120px; display: grid; grid-template-columns: 72px 72px 1.05fr 1.15fr 1.55fr .95fr 250px; gap: 10px; align-items: center; padding: 12px 14px; }
 .agenda-head { background: #29231c; color: white; font-size: 12px; text-transform: uppercase; letter-spacing: .1em; font-weight: 800; }
 .agenda-row { border-top: 1px solid var(--line); background: rgba(255,250,241,.78); }
 .agenda-row.blocked { background: #f7e9df; }

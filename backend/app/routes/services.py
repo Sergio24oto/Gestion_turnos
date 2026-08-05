@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -15,23 +15,29 @@ def offering_response(
     *,
     service_id: int,
     service_name: str,
-    duration: int,
     price,
+    duration_visible_minutes: int | None,
+    blocking_duration_minutes: int,
     active: bool,
     barber_id: int | None = None,
     is_from_price: bool = False,
+    has_consultation_price: bool = False,
+    duration_depends_on_professional: bool = False,
 ) -> ServiceOfferingRead:
     return ServiceOfferingRead(
         barber_id=barber_id,
         service_id=service_id,
         service_name=service_name,
-        duration=duration,
         price=price,
+        duration_visible_minutes=duration_visible_minutes,
+        blocking_duration_minutes=blocking_duration_minutes,
         active=active,
         is_from_price=is_from_price,
+        has_consultation_price=has_consultation_price,
+        duration_depends_on_professional=duration_depends_on_professional,
         id=service_id,
         name=service_name,
-        duration_minutes=duration,
+        duration_minutes=duration_visible_minutes,
     )
 
 
@@ -55,8 +61,9 @@ def list_services(barber_id: int | None = Query(default=None), db: Session = Dep
                 barber_id=barber_service.barber_id,
                 service_id=service.id,
                 service_name=service.name,
-                duration=service.duration_minutes,
                 price=barber_service.price,
+                duration_visible_minutes=barber_service.visible_duration_minutes,
+                blocking_duration_minutes=barber_service.blocking_duration_minutes,
                 active=barber_service.active,
             )
             for barber_service, service in rows
@@ -66,8 +73,13 @@ def list_services(barber_id: int | None = Query(default=None), db: Session = Dep
         select(
             Service.id,
             Service.name,
-            Service.duration_minutes,
             func.min(BarberService.price).label("price"),
+            func.count(BarberService.id).label("offering_count"),
+            func.sum(case((BarberService.price.is_(None), 1), else_=0)).label("consultation_count"),
+            func.min(BarberService.visible_duration_minutes).label("min_visible_duration"),
+            func.max(BarberService.visible_duration_minutes).label("max_visible_duration"),
+            func.sum(case((BarberService.visible_duration_minutes.is_(None), 1), else_=0)).label("variable_duration_count"),
+            func.min(BarberService.blocking_duration_minutes).label("min_blocking_duration"),
         )
         .join(BarberService, BarberService.service_id == Service.id)
         .join(Barber, Barber.id == BarberService.barber_id)
@@ -76,17 +88,36 @@ def list_services(barber_id: int | None = Query(default=None), db: Session = Dep
             Barber.active.is_(True),
             BarberService.active.is_(True),
         )
-        .group_by(Service.id, Service.name, Service.duration_minutes)
+        .group_by(Service.id, Service.name)
         .order_by(Service.id)
     ).all()
-    return [
-        offering_response(
-            service_id=service_id,
-            service_name=service_name,
-            duration=duration,
-            price=price,
-            active=True,
-            is_from_price=True,
+    responses = []
+    for (
+        service_id,
+        service_name,
+        price,
+        offering_count,
+        consultation_count,
+        min_visible_duration,
+        max_visible_duration,
+        variable_duration_count,
+        min_blocking_duration,
+    ) in rows:
+        has_consultation_price = bool(consultation_count)
+        has_consultation_duration = bool(variable_duration_count)
+        duration_depends = not has_consultation_duration and min_visible_duration != max_visible_duration
+        visible_duration = None if has_consultation_duration or duration_depends else min_visible_duration
+        responses.append(
+            offering_response(
+                service_id=service_id,
+                service_name=service_name,
+                price=None if has_consultation_price else price,
+                duration_visible_minutes=visible_duration,
+                blocking_duration_minutes=min_blocking_duration,
+                active=True,
+                is_from_price=not has_consultation_price and offering_count > 1,
+                has_consultation_price=has_consultation_price,
+                duration_depends_on_professional=duration_depends,
+            )
         )
-        for service_id, service_name, duration, price in rows
-    ]
+    return responses

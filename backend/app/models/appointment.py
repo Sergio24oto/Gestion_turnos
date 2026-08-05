@@ -1,7 +1,7 @@
 from datetime import date, datetime, time
 from decimal import Decimal
 
-from sqlalchemy import Computed, Date, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Time, func
+from sqlalchemy import CheckConstraint, Computed, Date, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Time, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
@@ -12,6 +12,18 @@ class Appointment(Base):
     __table_args__ = (
         Index("uq_turnos_peluquero_fecha_hora_activo", "peluquero_id", "fecha_activa", "hora_activa", unique=True),
         Index("uq_turnos_cancelacion_token_hash", "cancelacion_token_hash", unique=True),
+        CheckConstraint(
+            "precio_servicio IS NULL OR precio_servicio >= 0",
+            name="ck_turnos_precio_servicio_no_negativo",
+        ),
+        CheckConstraint(
+            "duracion_visible_servicio IS NULL OR duracion_visible_servicio > 0",
+            name="ck_turnos_duracion_visible_servicio_positiva",
+        ),
+        CheckConstraint(
+            "duracion_bloqueo_servicio > 0",
+            name="ck_turnos_duracion_bloqueo_servicio_positiva",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -21,8 +33,19 @@ class Appointment(Base):
     service_price: Mapped[Decimal] = mapped_column(
         "precio_servicio",
         Numeric(10, 2),
-        nullable=False,
+        nullable=True,
         default=Decimal("0.00"),
+    )
+    service_visible_duration_minutes: Mapped[int] = mapped_column(
+        "duracion_visible_servicio",
+        Integer,
+        nullable=True,
+    )
+    service_blocking_duration_minutes: Mapped[int] = mapped_column(
+        "duracion_bloqueo_servicio",
+        Integer,
+        nullable=False,
+        default=20,
     )
     date: Mapped[date] = mapped_column("fecha", Date, nullable=False, index=True)
     start_time: Mapped[time] = mapped_column("hora_inicio", Time, nullable=False)

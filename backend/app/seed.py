@@ -12,28 +12,59 @@ from .services.auth import hash_password
 
 
 DEFAULT_SERVICES = [
-    ("Corte clásico", 20),
-    ("Corte clásico + barba + cejas", 20),
-    ("Corte clásico + cejas", 20),
-    ("Barba solamente", 20),
+    ("Corte clásico", ("Corte clásico", "Corte clasico", "Corte clÃ¡sico"), 20),
+    (
+        "Corte clásico + barba + cejas",
+        ("Corte clásico + barba + cejas", "Corte clasico + barba + cejas", "Corte clÃ¡sico + barba + cejas"),
+        20,
+    ),
+    (
+        "Corte clásico + cejas",
+        ("Corte clásico + cejas", "Corte clasico + cejas", "Corte clÃ¡sico + cejas"),
+        20,
+    ),
+    ("Barba solamente", ("Barba solamente",), 20),
 ]
 
 DEFAULT_BARBERS = [
-    ("Marcelo Navarro", "Cortes clásicos, barba y atención unisex.", "/marcelo-navarro-logo.png", 1),
-    ("Equipo Marcelo Navarro", "Atención unisex y turnos de apoyo.", "/marcelo-navarro-logo.png", 2),
+    {
+        "name": "Marcelo Navarro",
+        "aliases": ("Marcelo Navarro",),
+        "description": "Cortes clásicos, barba y atención unisex.",
+        "photo_url": "/barbers/marcelo.jpeg",
+        "order": 1,
+        "appointment_interval_minutes": 20,
+    },
+    {
+        "name": "Jeremías Vivas",
+        "aliases": ("Jeremias Vivas", "Jeremías Vivas", "Equipo Marcelo Navarro"),
+        "description": "Atención unisex, cortes actuales y turnos de apoyo.",
+        "photo_url": "/barbers/jeremias.jpeg",
+        "order": 2,
+        "appointment_interval_minutes": 30,
+    },
 ]
 
 
 def seed_initial_data(db: Session) -> None:
-    for name, duration in DEFAULT_SERVICES:
-        exists = db.scalar(select(Service).where(Service.name == name))
+    for name, aliases, duration in DEFAULT_SERVICES:
+        exists = db.scalar(select(Service).where(Service.name.in_(aliases)))
         if not exists:
             db.add(Service(name=name, duration_minutes=duration, price=Decimal("0.00"), active=True))
 
-    for name, description, photo_url, order in DEFAULT_BARBERS:
-        exists = db.scalar(select(Barber).where(Barber.name == name))
+    for barber_data in DEFAULT_BARBERS:
+        exists = db.scalar(select(Barber).where(Barber.name.in_(barber_data["aliases"])))
         if not exists:
-            db.add(Barber(name=name, description=description, photo_url=photo_url, active=True, order=order))
+            db.add(
+                Barber(
+                    name=barber_data["name"],
+                    description=barber_data["description"],
+                    photo_url=barber_data["photo_url"],
+                    active=True,
+                    order=barber_data["order"],
+                    appointment_interval_minutes=barber_data["appointment_interval_minutes"],
+                )
+            )
 
     db.flush()
 
@@ -48,7 +79,16 @@ def seed_initial_data(db: Session) -> None:
                 )
             )
             if not exists:
-                db.add(BarberService(barber=barber, service=service, price=Decimal("0.00"), active=True))
+                db.add(
+                    BarberService(
+                        barber=barber,
+                        service=service,
+                        price=Decimal("0.00"),
+                        visible_duration_minutes=service.duration_minutes,
+                        blocking_duration_minutes=barber.appointment_interval_minutes,
+                        active=True,
+                    )
+                )
 
     admin = db.scalar(select(AdminUser).where(AdminUser.username == settings.admin_default_user))
     if not admin:

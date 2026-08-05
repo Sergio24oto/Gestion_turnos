@@ -50,13 +50,41 @@ function timeLabel(value) {
 }
 
 function formatPrice(value) {
+  if (value === null || value === undefined) return "A consultar";
   const amount = Number(value || 0);
   return `$ ${new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(amount)}`;
 }
 
 function formatServicePrice(service) {
+  if (!service || service.price === null || service.price === undefined || service.has_consultation_price) return "A consultar";
   const price = formatPrice(service?.price);
   return service?.is_from_price ? `Desde ${price}` : price;
+}
+
+function formatDuration(value) {
+  if (value === null || value === undefined) return "A consultar";
+  return `${value} min`;
+}
+
+function formatServiceDuration(service) {
+  if (!service) return "A consultar";
+  if (service.duration_depends_on_professional) return "La duración depende del profesional";
+  if (service.duration_visible_minutes === null || service.duration_visible_minutes === undefined) return "A consultar";
+  return formatDuration(service.duration_visible_minutes);
+}
+
+function serviceMetaLabel(service) {
+  const price = formatServicePrice(service);
+  const duration = formatServiceDuration(service);
+  if (price === "A consultar" || duration === "A consultar") {
+    return (
+      <>
+        <span>Precio: {price}</span>
+        <span>Duración: {duration}</span>
+      </>
+    );
+  }
+  return <span>{price} · {duration}</span>;
 }
 
 function cancellationLink(token) {
@@ -97,6 +125,7 @@ function whatsappMessage(booking) {
     `Peluquero: ${normalizeBarberName(booking.barber_name)}`,
     `Servicio: ${booking.service_name}`,
     `Precio: ${formatPrice(booking.service_price)}`,
+    `Duración: ${formatDuration(booking.service_visible_duration_minutes)}`,
     `Fecha: ${formatDate(booking.date)}`,
     `Hora: ${timeLabel(booking.start_time)}`,
     "",
@@ -177,6 +206,7 @@ function normalizeBarber(barber) {
 
 function normalizeBarberName(name) {
   if (!name) return "-";
+  if (name === "Sin preferencia") return name;
   if (name.includes("Equipo") || name.includes("Jerem")) return BARBER_VISUALS.jeremias.name;
   return BARBER_VISUALS.marcelo.name;
 }
@@ -188,6 +218,11 @@ function barberById(barbers, barberId) {
 function selectedBarberName(barbers, barberId) {
   if (barberId === ANY_BARBER) return "Sin preferencia";
   return barberById(barbers, barberId)?.name || "-";
+}
+
+function appointmentServiceLabel(appointment) {
+  if (!appointment) return "-";
+  return `${appointment.service_name} · ${formatPrice(appointment.service_price)} · Duración: ${formatDuration(appointment.service_visible_duration_minutes)} · Ocupa: ${formatDuration(appointment.service_blocking_duration_minutes)}`;
 }
 
 function reservationStepNumber(step) {
@@ -228,6 +263,7 @@ function Summary({ barber, service, date, time, customer, phone }) {
       {barber ? <div><span>Peluquero</span><strong><BarberLabel name={barberName} /></strong></div> : null}
       <div><span>Servicio</span><strong>{service?.name || "-"}</strong></div>
       <div><span>Precio</span><strong>{formatServicePrice(service)}</strong></div>
+      <div><span>Duración</span><strong>{formatServiceDuration(service)}</strong></div>
       <div><span>Fecha</span><strong>{date ? formatDate(date) : "-"}</strong></div>
       <div><span>Hora</span><strong>{time ? timeLabel(time) : "-"}</strong></div>
       {customer ? <div><span>Cliente</span><strong>{customer}</strong></div> : null}
@@ -263,6 +299,7 @@ export default function App() {
   const [adminBarberTab, setAdminBarberTab] = useState(null);
   const [agenda, setAgenda] = useState([]);
   const [manual, setManual] = useState(null);
+  const [manualServices, setManualServices] = useState([]);
   const [cancelToken] = useState(cancellationTokenFromPath());
   const [cancelAppointmentData, setCancelAppointmentData] = useState(null);
   const [cancelStatus, setCancelStatus] = useState("loading");
@@ -353,6 +390,23 @@ export default function App() {
       api.services().then(setServices).catch((err) => setError(err.message));
     }
   }, [view]);
+
+  useEffect(() => {
+    if (!manual?.barber_id) {
+      setManualServices([]);
+      return;
+    }
+    api.services(manual.barber_id)
+      .then((items) => {
+        setManualServices(items);
+        setManual((current) => {
+          if (!current || String(current.barber_id) !== String(manual.barber_id)) return current;
+          if (items.some((service) => String(service.id) === String(current.service_id))) return current;
+          return { ...current, service_id: items[0]?.id || "" };
+        });
+      })
+      .catch((err) => setError(err.message));
+  }, [manual?.barber_id]);
 
   const stats = useMemo(() => ({
     free: visibleAgenda.filter((slot) => slot.status === "Libre").length,
@@ -554,12 +608,13 @@ export default function App() {
       return (
         <div key={`${slot.barber_id}-${slot.time}`} className={`agenda-row ${slot.status === "Libre" ? "free" : slot.status === "Bloqueado" ? "blocked" : "booked"}`}>
           <strong>{String(slot.time).slice(0, 5)}</strong>
+          <span>{slot.appointment?.end_time ? String(slot.appointment.end_time).slice(0, 5) : "-"}</span>
           <span><BarberLabel barber={barber} name={slot.barber_name} /></span>
           <span>{slot.appointment ? `${slot.appointment.client_first_name} ${slot.appointment.client_last_name}` : slot.status === "Bloqueado" ? "Horario bloqueado" : "Disponible"}</span>
-          <span>{slot.appointment ? `${slot.appointment.service_name} · ${formatPrice(slot.appointment.service_price)}` : "-"}</span>
+          <span>{appointmentServiceLabel(slot.appointment)}</span>
           <span className={`status ${slot.status === "Libre" ? "free" : slot.status === "Bloqueado" ? "blocked" : "booked"}`}>{slot.appointment?.origin === "MANUAL" ? "Registrado manualmente" : slot.status}</span>
           <div className="row-actions">
-            {slot.status === "Libre" && <><button onClick={() => setManual({ time: slot.time, barber_id: slot.barber_id, service_id: services[0]?.id || "", first_name: "", last_name: "", phone: "" })}>Registrar</button><button onClick={() => blockSlot(slot)}>Bloquear</button></>}
+            {slot.status === "Libre" && <><button onClick={() => setManual({ time: slot.time, barber_id: slot.barber_id, service_id: "", first_name: "", last_name: "", phone: "" })}>Registrar</button><button onClick={() => blockSlot(slot)}>Bloquear</button></>}
             {slot.status === "Reservado" && <button onClick={() => cancelAppointment(slot)}>Cancelar</button>}
             {slot.status === "Bloqueado" && <button onClick={() => unblockSlot(slot)}>Desbloquear</button>}
           </div>
@@ -593,7 +648,11 @@ export default function App() {
                 <h2>Confirmar cancelación</h2>
                 <Summary
                   barber={cancelAppointmentData.barber_name}
-                  service={{ name: cancelAppointmentData.service_name, price: cancelAppointmentData.service_price }}
+                  service={{
+                    name: cancelAppointmentData.service_name,
+                    price: cancelAppointmentData.service_price,
+                    duration_visible_minutes: cancelAppointmentData.service_visible_duration_minutes,
+                  }}
                   date={cancelAppointmentData.date}
                   time={cancelAppointmentData.start_time}
                 />
@@ -703,7 +762,8 @@ export default function App() {
               <div className="service-grid">
                 {services.length ? services.map((service) => (
                   <button key={service.service_id || service.id} className={`service-card ${serviceId === service.id ? "selected" : ""}`} onClick={() => { setServiceId(service.id); setDate(null); setTime(null); resetAvailabilityState(); setStep("date"); }}>
-                    <strong>{service.name}</strong><span>{service.duration_minutes} minutos · {formatServicePrice(service)}</span>
+                    <strong>{service.name}</strong>
+                    <div className="service-meta">{serviceMetaLabel(service)}</div>
                   </button>
                 )) : <p className="availability-state">Cargando servicios...</p>}
               </div>
@@ -822,7 +882,7 @@ export default function App() {
                     <section key={barber.id} className="agenda-group">
                       <h3><BarberLabel barber={barber} /></h3>
                       <div className="agenda-wrap">
-                        <div className="agenda-head"><span>Hora</span><span>Peluquero</span><span>Cliente</span><span>Servicio</span><span>Estado</span><span>Acciones</span></div>
+                        <div className="agenda-head"><span>Hora</span><span>Fin</span><span>Peluquero</span><span>Cliente</span><span>Servicio</span><span>Estado</span><span>Acciones</span></div>
                         <div className="agenda-rows">{renderAgendaRows(slots)}</div>
                       </div>
                     </section>
@@ -830,7 +890,7 @@ export default function App() {
                 </div>
               ) : (
                 <div className="agenda-wrap">
-                  <div className="agenda-head"><span>Hora</span><span>Peluquero</span><span>Cliente</span><span>Servicio</span><span>Estado</span><span>Acciones</span></div>
+                  <div className="agenda-head"><span>Hora</span><span>Fin</span><span>Peluquero</span><span>Cliente</span><span>Servicio</span><span>Estado</span><span>Acciones</span></div>
                   <div className="agenda-rows">{renderAgendaRows(visibleAgenda)}</div>
                 </div>
               )}
@@ -850,7 +910,11 @@ export default function App() {
             <p className="modal-lead">Tu turno fue reservado correctamente.</p>
             <Summary
               barber={booking.barber_name}
-              service={{ name: booking.service_name, price: booking.service_price }}
+              service={{
+                name: booking.service_name,
+                price: booking.service_price,
+                duration_visible_minutes: booking.service_visible_duration_minutes,
+              }}
               date={booking.date}
               time={booking.start_time}
               customer={`${booking.client_first_name} ${booking.client_last_name}`}
@@ -873,11 +937,11 @@ export default function App() {
         <div className="modal-layer">
           <form className="dialog-card" onSubmit={submitManual}>
             <div><p className="eyebrow">Registrar turno manual</p><h3>{formatDate(adminDate)} · {timeLabel(manual.time)}</h3></div>
-            <label>Peluquero<select value={manual.barber_id} onChange={(e) => setManual({ ...manual, barber_id: e.target.value })}>{barbers.map((barber) => <option key={barber.id} value={barber.id}>{barber.name}</option>)}</select></label>
+            <label>Peluquero<select value={manual.barber_id} onChange={(e) => setManual({ ...manual, barber_id: e.target.value, service_id: "" })}>{barbers.map((barber) => <option key={barber.id} value={barber.id}>{barber.name}</option>)}</select></label>
             <label>Nombre<input required value={manual.first_name} onChange={(e) => setManual({ ...manual, first_name: e.target.value })} /></label>
             <label>Apellido<input value={manual.last_name} onChange={(e) => setManual({ ...manual, last_name: e.target.value })} /></label>
             <label>Teléfono <span>opcional</span><input value={manual.phone} onChange={(e) => setManual({ ...manual, phone: e.target.value })} /></label>
-            <label>Servicio<select value={manual.service_id} onChange={(e) => setManual({ ...manual, service_id: e.target.value })}>{services.map((service) => <option key={service.id} value={service.id}>{service.name} · {formatServicePrice(service)}</option>)}</select></label>
+            <label>Servicio<select required value={manual.service_id} onChange={(e) => setManual({ ...manual, service_id: e.target.value })}>{manualServices.map((service) => <option key={service.id} value={service.id}>{service.name} · {formatServicePrice(service)} · {formatServiceDuration(service)}</option>)}</select></label>
             <menu><button type="button" className="ghost" onClick={() => setManual(null)}>Cerrar</button><button className="primary" type="submit">Guardar</button></menu>
           </form>
         </div>
