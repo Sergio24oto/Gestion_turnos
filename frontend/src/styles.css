@@ -239,12 +239,18 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 }
 .admin-toolbar {
   align-items: flex-start;
+  padding-top: 4px;
 }
 .admin-toolbar > div:first-child {
   min-width: 0;
 }
 .admin-toolbar h2 {
   overflow-wrap: anywhere;
+}
+.admin-subtitle {
+  margin: 8px 0 0;
+  color: #B89F82;
+  line-height: 1.45;
 }
 .admin-section-tabs {
   display: flex;
@@ -295,28 +301,40 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 .status.blocked { color: var(--bad); background: #f5dedb; }
 .row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .row-actions button { min-height: 36px; border-radius: 999px; border: 1px solid var(--line); background: #fffdf8; }
-.services-admin { display: grid; gap: 16px; }
+.services-admin { display: grid; gap: 18px; }
 .services-toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(150px, 220px) max-content;
-  gap: 10px;
-  align-items: center;
+  grid-template-columns: minmax(260px, 1fr) minmax(160px, 220px) max-content;
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid rgba(198, 163, 106, .14);
+  border-radius: 18px;
+  background: rgba(17, 17, 17, .18);
 }
+.control-field {
+  display: grid;
+  gap: 7px;
+  color: #B89F82;
+  font-size: 13px;
+  font-weight: 900;
+}
+.new-service-button { min-width: 168px; }
 .services-list { display: grid; gap: 12px; }
 .admin-service-card {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(180px, auto) auto;
-  gap: 18px;
+  grid-template-columns: minmax(280px, 1fr) minmax(210px, auto) auto;
+  gap: 20px;
   align-items: start;
-  padding: 18px;
+  padding: 20px;
   border: 1px solid rgba(198, 163, 106, .18);
   border-radius: 18px;
   background: rgba(30, 26, 23, .78);
 }
 .admin-service-card.inactive { opacity: .72; }
 .admin-service-main { display: grid; gap: 8px; min-width: 0; }
-.admin-service-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.admin-service-card strong { color: #F5EBDD; font-size: 19px; line-height: 1.25; }
+.admin-service-title { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.admin-service-card strong { color: #F5EBDD; font-size: clamp(18px, 2vw, 21px); line-height: 1.25; }
 .admin-service-card span,
 .admin-service-card p { color: #B89F82; }
 .admin-service-card p { margin: 0; line-height: 1.45; }
@@ -331,6 +349,12 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
   font-weight: 900;
 }
 .service-description { max-width: 64ch; }
+.service-description {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
 .service-status-pill {
   border-radius: 999px;
   background: #C6A36A;
@@ -343,11 +367,26 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
   background: rgba(162, 59, 50, .34);
   color: #F5D1CB !important;
 }
+.services-empty {
+  display: grid;
+  gap: 10px;
+  place-items: start;
+  padding: 22px;
+  border: 1px solid rgba(198, 163, 106, .16);
+  border-radius: 18px;
+  background: rgba(30, 26, 23, .62);
+}
+.services-empty strong {
+  color: #F5EBDD;
+  font-size: 18px;
+}
+.services-empty span {
+  color: #B89F82;
+}
 .service-admin-meta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  display: grid;
   gap: 8px;
+  justify-items: end;
 }
 .service-admin-meta span,
 .admin-success {
@@ -359,6 +398,9 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
   font-weight: 800;
 }
 .admin-success {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   width: fit-content;
   margin: 0;
   max-width: min(520px, 100%);
@@ -370,7 +412,24 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
   border-radius: 12px;
   padding: 8px 10px;
 }
+.admin-success button {
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(216, 241, 227, .28);
+  border-radius: 50%;
+  background: rgba(17, 17, 17, .22);
+  color: #D8F1E3;
+  font-weight: 900;
+  line-height: 1;
+}
 .service-dialog p { margin: 0; color: #B89F82; line-height: 1.5; }
+.service-dialog {
+  width: min(560px, 100%);
+}
+.service-dialog menu {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
 .toggle-row {
   display: flex;
   grid-template-columns: none;
@@ -531,6 +590,15 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
   border-color: rgba(198, 163, 106, .30);
   color: #C6A36A;
   font-weight: 800;
+  padding: 0 14px;
+}
+.row-actions .warning-action {
+  border-color: rgba(184, 159, 130, .28);
+  color: #D8C7B4;
+}
+.row-actions .reactivate-action {
+  border-color: rgba(198, 163, 106, .42);
+  color: #C6A36A;
 }
 .row-actions button:hover {
   background: #C6A36A;
@@ -552,6 +620,12 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 }
 .shell:has(.admin-panel) .dialog-card label {
   color: #B89F82;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #C6A36A;
+  outline-offset: 3px;
 }
 .shell:has(.admin-panel) .dialog-card option,
 .admin-panel option {
@@ -632,6 +706,9 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
   .admin-service-card {
     grid-template-columns: 1fr;
   }
+  .services-toolbar {
+    padding: 12px;
+  }
   .services-toolbar .primary,
   .services-toolbar input,
   .services-toolbar select {
@@ -647,6 +724,9 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
   }
   .admin-service-card .row-actions button {
     width: 100%;
+  }
+  .service-dialog menu {
+    grid-template-columns: 1fr;
   }
   .time-grid { grid-template-columns: 1fr; }
   .confirmation-actions, .step-actions { display: grid; }

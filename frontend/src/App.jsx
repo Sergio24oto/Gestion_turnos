@@ -230,6 +230,10 @@ function appointmentServiceLabel(appointment) {
   return `${appointment.service_name} · ${formatPrice(appointment.service_price)} · Duración: ${formatDuration(appointment.service_visible_duration_minutes)} · Ocupa: ${formatDuration(appointment.service_blocking_duration_minutes)}`;
 }
 
+function pluralize(value, singular, plural) {
+  return `${value} ${value === 1 ? singular : plural}`;
+}
+
 function reservationStepNumber(step) {
   const index = RESERVATION_STEPS.indexOf(step);
   return index >= 0 ? index + 1 : 0;
@@ -952,7 +956,11 @@ export default function App() {
           ) : (
             <section className="admin-panel">
               <div className="admin-toolbar">
-                <div><p className="eyebrow">Panel privado</p><h2>{adminSection === "agenda" ? `Agenda - ${formatDate(adminDate)}` : "Servicios"}</h2></div>
+                <div>
+                  <p className="eyebrow">Panel privado</p>
+                  <h2>{adminSection === "agenda" ? `Agenda - ${formatDate(adminDate)}` : "Servicios"}</h2>
+                  {adminSection === "services" ? <p className="admin-subtitle">Gestioná el catálogo de servicios del salón.</p> : null}
+                </div>
                 <div className="toolbar-actions">
                   {adminSection === "agenda" ? <input type="date" value={adminDate} onChange={(e) => setAdminDate(e.target.value)} /> : null}
                   <button className="ghost" onClick={() => { localStorage.removeItem("adminToken"); setToken(""); }}>Salir</button>
@@ -1003,13 +1011,18 @@ export default function App() {
                 </>
               ) : (
                 <div className="services-admin">
-                  {serviceMessage ? <p className="admin-success">{serviceMessage}</p> : null}
+                  {serviceMessage ? (
+                    <div className="admin-success" role="status">
+                      <span>{serviceMessage}</span>
+                      <button type="button" onClick={() => setServiceMessage("")} aria-label="Cerrar mensaje">×</button>
+                    </div>
+                  ) : null}
                   <div className="services-toolbar">
-                    <input type="search" placeholder="Buscar servicio" value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} />
-                    <select value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)}>
+                    <label className="control-field">Buscar<input type="search" placeholder="Ej: Corte, Alisado..." value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} /></label>
+                    <label className="control-field">Estado<select value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)}>
                       {Object.entries(SERVICE_FILTERS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                    </select>
-                    <button className="primary" onClick={openNewServiceForm}>Nuevo servicio</button>
+                    </select></label>
+                    <button className="primary new-service-button" onClick={openNewServiceForm}>Nuevo servicio</button>
                   </div>
                   <div className="services-list">
                     {visibleAdminServices.map((service) => (
@@ -1023,16 +1036,22 @@ export default function App() {
                           <p className="service-description">{service.description || "Sin descripción."}</p>
                         </div>
                         <div className="service-admin-meta">
-                          <span><strong>{service.assigned_barbers_count}</strong> profesionales</span>
-                          {service.future_appointments_count ? <span>{service.future_appointments_count} turnos futuros</span> : null}
+                          <span>{pluralize(service.assigned_barbers_count, "profesional asignado", "profesionales asignados")}</span>
+                          <span>{pluralize(service.future_appointments_count || 0, "turno futuro", "turnos futuros")}</span>
                         </div>
                         <div className="row-actions">
-                          <button onClick={() => openEditServiceForm(service)}>Editar</button>
-                          <button onClick={() => setServiceConfirm(service)}>{service.active ? "Desactivar" : "Activar"}</button>
+                          <button className="edit-action" onClick={() => openEditServiceForm(service)}>Editar</button>
+                          <button className={service.active ? "warning-action" : "reactivate-action"} onClick={() => setServiceConfirm(service)}>{service.active ? "Desactivar" : "Reactivar"}</button>
                         </div>
                       </article>
                     ))}
-                    {!visibleAdminServices.length ? <p className="availability-state">No hay servicios para mostrar.</p> : null}
+                    {!visibleAdminServices.length ? (
+                      <div className="services-empty">
+                        <strong>{adminServices.length ? "No encontramos servicios con esos filtros." : "Aún no hay servicios."}</strong>
+                        <span>{adminServices.length ? "Probá cambiar la búsqueda o el estado seleccionado." : "Creá el primero para comenzar a configurar el salón."}</span>
+                        {!adminServices.length ? <button className="primary" onClick={openNewServiceForm}>Nuevo servicio</button> : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -1082,16 +1101,16 @@ export default function App() {
               <p className="eyebrow">{serviceForm.mode === "edit" ? "Editar servicio" : "Nuevo servicio"}</p>
               <h3>{serviceForm.mode === "edit" ? serviceForm.name : "Crear servicio"}</h3>
             </div>
-            <label>Nombre<input required maxLength="120" value={serviceForm.name} onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })} /></label>
-            <label>Descripción<input maxLength="255" value={serviceForm.description} onChange={(e) => setServiceForm({ ...serviceForm, description: e.target.value })} /></label>
-            <label>Categoría<input maxLength="80" value={serviceForm.category} onChange={(e) => setServiceForm({ ...serviceForm, category: e.target.value })} /></label>
+            <label>Nombre<input required maxLength="120" value={serviceForm.name} onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })} /><span className="field-help">Usá un nombre claro, por ejemplo “Alisado”.</span></label>
+            <label>Descripción<input maxLength="255" value={serviceForm.description} onChange={(e) => setServiceForm({ ...serviceForm, description: e.target.value })} /><span className="field-help">Opcional. Ayuda a identificar el servicio dentro del panel.</span></label>
+            <label>Categoría<input maxLength="80" value={serviceForm.category} onChange={(e) => setServiceForm({ ...serviceForm, category: e.target.value })} /><span className="field-help">Opcional. Ejemplo: Cortes, Tratamientos, Barba.</span></label>
             <label className="toggle-row">
               <input type="checkbox" checked={serviceForm.active} onChange={(e) => setServiceForm({ ...serviceForm, active: e.target.checked })} />
               <span>Servicio activo</span>
             </label>
             <p className="field-help">El precio, la duración y los profesionales asignados se configuran por peluquero en otra sección.</p>
             <menu>
-              <button type="button" className="ghost" disabled={serviceSaving} onClick={() => setServiceForm(null)}>Cerrar</button>
+              <button type="button" className="ghost" disabled={serviceSaving} onClick={() => setServiceForm(null)}>Cancelar</button>
               <button className="primary" type="submit" disabled={serviceSaving}>{serviceSaving ? "Guardando..." : "Guardar"}</button>
             </menu>
           </form>
