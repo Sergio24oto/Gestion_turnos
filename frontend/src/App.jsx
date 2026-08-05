@@ -1014,14 +1014,16 @@ export default function App() {
                   <div className="services-list">
                     {visibleAdminServices.map((service) => (
                       <article key={service.id} className={`admin-service-card ${service.active ? "" : "inactive"}`}>
-                        <div>
-                          <strong>{service.name}</strong>
-                          <span>{service.category || "Sin categoría"}</span>
-                          {service.description ? <p>{service.description}</p> : <p>Sin descripción.</p>}
+                        <div className="admin-service-main">
+                          <div className="admin-service-title">
+                            <strong>{service.name}</strong>
+                            <span className="service-status-pill">{service.active ? "Activo" : "Inactivo"}</span>
+                          </div>
+                          <span className="service-category">{service.category || "Sin categoría"}</span>
+                          <p className="service-description">{service.description || "Sin descripción."}</p>
                         </div>
                         <div className="service-admin-meta">
                           <span><strong>{service.assigned_barbers_count}</strong> profesionales</span>
-                          <span>{service.active ? "Activo" : "Inactivo"}</span>
                           {service.future_appointments_count ? <span>{service.future_appointments_count} turnos futuros</span> : null}
                         </div>
                         <div className="row-actions">

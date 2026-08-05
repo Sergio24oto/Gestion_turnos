@@ -232,6 +232,20 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 .global-error { border: 1px solid #e0b6b0; background: #fff3f1; padding: 12px 16px; border-radius: 16px; }
 .admin-login { display: grid; grid-template-columns: 1fr minmax(260px, 420px); gap: 28px; align-items: start; }
 .toolbar-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.shell:has(.admin-panel) .topbar {
+  position: relative;
+  top: auto;
+  margin-bottom: 18px;
+}
+.admin-toolbar {
+  align-items: flex-start;
+}
+.admin-toolbar > div:first-child {
+  min-width: 0;
+}
+.admin-toolbar h2 {
+  overflow-wrap: anywhere;
+}
 .admin-section-tabs {
   display: flex;
   gap: 8px;
@@ -284,26 +298,51 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 .services-admin { display: grid; gap: 16px; }
 .services-toolbar {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(150px, 220px) auto;
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, 220px) max-content;
   gap: 10px;
   align-items: center;
 }
 .services-list { display: grid; gap: 12px; }
 .admin-service-card {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto auto;
-  gap: 14px;
-  align-items: center;
-  padding: 16px;
+  grid-template-columns: minmax(260px, 1fr) minmax(180px, auto) auto;
+  gap: 18px;
+  align-items: start;
+  padding: 18px;
   border: 1px solid rgba(198, 163, 106, .18);
   border-radius: 18px;
   background: rgba(30, 26, 23, .78);
 }
 .admin-service-card.inactive { opacity: .72; }
-.admin-service-card strong { color: #F5EBDD; font-size: 18px; }
+.admin-service-main { display: grid; gap: 8px; min-width: 0; }
+.admin-service-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.admin-service-card strong { color: #F5EBDD; font-size: 19px; line-height: 1.25; }
 .admin-service-card span,
 .admin-service-card p { color: #B89F82; }
-.admin-service-card p { margin: 6px 0 0; line-height: 1.45; }
+.admin-service-card p { margin: 0; line-height: 1.45; }
+.service-category {
+  width: fit-content;
+  border: 1px solid rgba(198, 163, 106, .18);
+  border-radius: 999px;
+  background: rgba(17, 17, 17, .24);
+  color: #C6A36A;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 900;
+}
+.service-description { max-width: 64ch; }
+.service-status-pill {
+  border-radius: 999px;
+  background: #C6A36A;
+  color: #111111 !important;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 900;
+}
+.admin-service-card.inactive .service-status-pill {
+  background: rgba(162, 59, 50, .34);
+  color: #F5D1CB !important;
+}
 .service-admin-meta {
   display: flex;
   flex-wrap: wrap;
@@ -316,15 +355,20 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
   border-radius: 999px;
   background: rgba(17, 17, 17, .28);
   color: #E6D7C6;
-  padding: 8px 11px;
+  padding: 7px 10px;
   font-weight: 800;
 }
 .admin-success {
   width: fit-content;
   margin: 0;
+  max-width: min(520px, 100%);
   color: #D8F1E3;
   border-color: rgba(36, 116, 91, .34);
   background: rgba(36, 116, 91, .22);
+  font-size: 13px;
+  line-height: 1.35;
+  border-radius: 12px;
+  padding: 8px 10px;
 }
 .service-dialog p { margin: 0; color: #B89F82; line-height: 1.5; }
 .toggle-row {
@@ -509,6 +553,15 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 .shell:has(.admin-panel) .dialog-card label {
   color: #B89F82;
 }
+.shell:has(.admin-panel) .dialog-card option,
+.admin-panel option {
+  background: #1E1A17;
+  color: #F5EBDD;
+}
+.shell:has(.admin-panel) .dialog-card select,
+.admin-panel select {
+  color-scheme: dark;
+}
 .modal-layer { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(21,17,13,.38); backdrop-filter: blur(4px); z-index: 10; padding: 18px; }
 .dialog-card { display: grid; gap: 14px; width: min(520px, 100%); padding: 22px; background: var(--paper); border-radius: 22px; border: 1px solid var(--line); }
 .dialog-card menu { display: flex; justify-content: flex-end; gap: 10px; padding: 0; margin: 4px 0 0; }
@@ -579,8 +632,21 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
   .admin-service-card {
     grid-template-columns: 1fr;
   }
+  .services-toolbar .primary,
+  .services-toolbar input,
+  .services-toolbar select {
+    width: 100%;
+  }
   .service-admin-meta {
     justify-content: flex-start;
+  }
+  .admin-service-card .row-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+  .admin-service-card .row-actions button {
+    width: 100%;
   }
   .time-grid { grid-template-columns: 1fr; }
   .confirmation-actions, .step-actions { display: grid; }
