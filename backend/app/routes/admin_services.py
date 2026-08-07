@@ -1,11 +1,12 @@
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import distinct, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models.appointment import Appointment
+from ..models.barber import Barber
 from ..models.barber_service import BarberService
 from ..models.service import Service
 from ..schemas.service import (
@@ -40,10 +41,23 @@ def ensure_unique_name(db: Session, name: str, current_service_id: int | None = 
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ya existe un servicio con ese nombre.")
 
 
-def service_counts(db: Session, service_id: int) -> tuple[int, int]:
-    assigned_barbers_count = db.scalar(
-        select(func.count(distinct(BarberService.barber_id))).where(BarberService.service_id == service_id)
+def active_assigned_barbers(db: Session, service_id: int) -> list[str]:
+    return list(
+        db.scalars(
+            select(Barber.name)
+            .join(BarberService, BarberService.barber_id == Barber.id)
+            .where(
+                BarberService.service_id == service_id,
+                BarberService.active.is_(True),
+                Barber.active.is_(True),
+            )
+            .order_by(Barber.order, Barber.id)
+        ).all()
     )
+
+
+def service_counts(db: Session, service_id: int) -> tuple[int, int, list[str]]:
+    assigned_barbers = active_assigned_barbers(db, service_id)
     future_appointments_count = db.scalar(
         select(func.count(Appointment.id)).where(
             Appointment.service_id == service_id,
@@ -51,11 +65,11 @@ def service_counts(db: Session, service_id: int) -> tuple[int, int]:
             Appointment.status != "Cancelado",
         )
     )
-    return int(assigned_barbers_count or 0), int(future_appointments_count or 0)
+    return len(assigned_barbers), int(future_appointments_count or 0), assigned_barbers
 
 
 def service_to_read(db: Session, service: Service) -> ServiceAdminRead:
-    assigned_barbers_count, future_appointments_count = service_counts(db, service.id)
+    assigned_barbers_count, future_appointments_count, assigned_barbers = service_counts(db, service.id)
     return ServiceAdminRead(
         id=service.id,
         name=service.name,
@@ -63,6 +77,7 @@ def service_to_read(db: Session, service: Service) -> ServiceAdminRead:
         category=service.category,
         active=service.active,
         assigned_barbers_count=assigned_barbers_count,
+        assigned_barbers=assigned_barbers,
         future_appointments_count=future_appointments_count,
         created_at=service.created_at,
         updated_at=service.updated_at,

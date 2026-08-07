@@ -86,6 +86,7 @@ class ServiceAdminRead(BaseModel):
     category: str | None = None
     active: bool
     assigned_barbers_count: int
+    assigned_barbers: list[str] = []
     future_appointments_count: int
     created_at: datetime | None = None
     updated_at: datetime | None = None

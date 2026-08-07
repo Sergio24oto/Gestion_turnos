@@ -58,6 +58,11 @@ function formatDuration(value) {
   return `${value} min`;
 }
 
+function formatAdminMinutes(value) {
+  if (value === null || value === undefined || value === "") return "No configurado";
+  return `${value} min`;
+}
+
 function formatServiceDuration(service) {
   if (!service) return "A consultar";
   if (service.duration_depends_on_professional) return "La duración depende del profesional";
@@ -296,6 +301,9 @@ export default function App() {
   const [barberServiceConfirm, setBarberServiceConfirm] = useState(null);
   const [barberServiceSaving, setBarberServiceSaving] = useState(false);
   const [barberServiceMessage, setBarberServiceMessage] = useState("");
+  const [quickServiceConfig, setQuickServiceConfig] = useState(null);
+  const [quickServiceItems, setQuickServiceItems] = useState([]);
+  const [quickConfigLoading, setQuickConfigLoading] = useState(false);
   const [cancelToken] = useState(cancellationTokenFromPath());
   const [cancelAppointmentData, setCancelAppointmentData] = useState(null);
   const [cancelStatus, setCancelStatus] = useState("loading");
@@ -341,6 +349,7 @@ export default function App() {
       ].filter(Boolean).some((value) => value.toLowerCase().includes(query));
     });
   }, [barberServiceConfigs, barberServiceSearch]);
+  const activeBarbers = useMemo(() => barbers.filter((barber) => barber.active !== false), [barbers]);
   const isReservationFlow = view === "client" && RESERVATION_STEPS.includes(step);
   const currentReservationStep = reservationStepNumber(step);
   const reservationProgress = currentReservationStep ? `${currentReservationStep * 20}%` : "0%";
@@ -503,10 +512,34 @@ export default function App() {
     });
   }
 
+  async function loadQuickServiceConfig(service) {
+    if (!service) return;
+    setQuickServiceConfig(service);
+    setQuickConfigLoading(true);
+    setBarberServiceMessage("");
+    try {
+      const responses = await Promise.all(activeBarbers.map(async (barber) => {
+        const items = await api.adminBarberServices(barber.id);
+        return {
+          barber,
+          item: items.find((config) => Number(config.service_id) === Number(service.id)),
+        };
+      }));
+      setQuickServiceItems(responses.filter((entry) => entry.item).map(({ barber, item }) => ({ ...item, barber_id: barber.id, barber_name: barber.name })));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setQuickConfigLoading(false);
+    }
+  }
+
   function openBarberServiceForm(item) {
     setBarberServiceMessage("");
+    const formBarber = item.barber_id ? barberById(barbers, item.barber_id) : selectedConfigBarber;
     setBarberServiceForm({
       mode: item.assigned ? "edit" : "assign",
+      barber_id: item.barber_id || configBarberId,
+      barber_name: item.barber_name || formBarber?.name || "",
       service_id: item.service_id,
       service_name: item.service_name,
       price: item.price ?? "",
@@ -530,21 +563,23 @@ export default function App() {
 
   async function submitBarberServiceForm(event) {
     event.preventDefault();
-    if (!barberServiceForm || barberServiceSaving || !configBarberId) return;
+    const targetBarberId = barberServiceForm?.barber_id || configBarberId;
+    if (!barberServiceForm || barberServiceSaving || !targetBarberId) return;
     setBarberServiceSaving(true);
     setError("");
     setBarberServiceMessage("");
     try {
       const payload = barberServicePayload(barberServiceForm);
       if (barberServiceForm.mode === "assign") {
-        await api.assignBarberService(configBarberId, payload);
-        setBarberServiceMessage("Servicio asignado al profesional.");
+        await api.assignBarberService(targetBarberId, payload);
+        setBarberServiceMessage(`Servicio asignado a ${barberServiceForm.barber_name || "profesional"}.`);
       } else {
-        await api.updateBarberService(configBarberId, barberServiceForm.service_id, payload);
+        await api.updateBarberService(targetBarberId, barberServiceForm.service_id, payload);
         setBarberServiceMessage("Configuración actualizada.");
       }
       setBarberServiceForm(null);
-      await loadBarberServiceConfigs(configBarberId);
+      if (configBarberId) await loadBarberServiceConfigs(configBarberId);
+      if (quickServiceConfig) await loadQuickServiceConfig(quickServiceConfig);
       await loadAdminServices();
     } catch (err) {
       setError(err.message);
@@ -554,15 +589,18 @@ export default function App() {
   }
 
   async function confirmBarberServiceStatusChange() {
-    if (!barberServiceConfirm || barberServiceSaving || !configBarberId) return;
+    const targetBarberId = barberServiceConfirm?.barber_id || configBarberId;
+    if (!barberServiceConfirm || barberServiceSaving || !targetBarberId) return;
     setBarberServiceSaving(true);
     setError("");
     setBarberServiceMessage("");
     try {
-      await api.updateBarberServiceStatus(configBarberId, barberServiceConfirm.service_id, { active: !barberServiceConfirm.active });
-      setBarberServiceMessage(barberServiceConfirm.active ? "Servicio desactivado para el profesional." : "Servicio reactivado para el profesional.");
+      await api.updateBarberServiceStatus(targetBarberId, barberServiceConfirm.service_id, { active: !barberServiceConfirm.active });
+      const barberName = barberServiceConfirm.barber_name || selectedConfigBarber?.name || "el profesional";
+      setBarberServiceMessage(barberServiceConfirm.active ? `Servicio desactivado para ${barberName}.` : `Servicio reactivado para ${barberName}.`);
       setBarberServiceConfirm(null);
-      await loadBarberServiceConfigs(configBarberId);
+      if (configBarberId) await loadBarberServiceConfigs(configBarberId);
+      if (quickServiceConfig) await loadQuickServiceConfig(quickServiceConfig);
       await loadAdminServices();
     } catch (err) {
       setError(err.message);
@@ -1123,12 +1161,21 @@ export default function App() {
                           </div>
                           <span className="service-category">{service.category || "Sin categoría"}</span>
                           <p className="service-description">{service.description || "Sin descripción."}</p>
+                          <div className="assigned-barbers">
+                            <span>{service.assigned_barbers_count === 1 ? "Profesional:" : service.assigned_barbers_count ? "Profesionales:" : "Sin profesionales asignados."}</span>
+                            {service.assigned_barbers?.length ? (
+                              <div className="assigned-barber-list">
+                                {service.assigned_barbers.map((name) => <span key={name} className="mini-badge">{displayBarberName(name)}</span>)}
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
                         <div className="service-admin-meta">
-                          <span>{pluralize(service.assigned_barbers_count, "profesional asignado", "profesionales asignados")}</span>
+                          <span>{pluralize(service.assigned_barbers_count, "profesional activo", "profesionales activos")}</span>
                           <span>{pluralize(service.future_appointments_count || 0, "turno futuro", "turnos futuros")}</span>
                         </div>
                         <div className="row-actions">
+                          <button className="configure-action" onClick={() => loadQuickServiceConfig(service)}>Configurar</button>
                           <button className="edit-action" onClick={() => openEditServiceForm(service)}>Editar</button>
                           <button className={service.active ? "warning-action" : "reactivate-action"} onClick={() => setServiceConfirm(service)}>{service.active ? "Desactivar" : "Reactivar"}</button>
                         </div>
@@ -1163,7 +1210,6 @@ export default function App() {
                     <div>
                       <p className="eyebrow">Configuración</p>
                       <strong>{selectedConfigBarber ? displayBarberName(selectedConfigBarber.name) : "Seleccioná un profesional"}</strong>
-                      {selectedConfigBarber ? <span>Intervalo base: {formatDuration(selectedConfigBarber.appointment_interval_minutes)}</span> : null}
                     </div>
                     <label className="control-field">Buscar servicio<input type="search" placeholder="Ej: Corte, Alisado..." value={barberServiceSearch} onChange={(e) => setBarberServiceSearch(e.target.value)} /></label>
                   </div>
@@ -1180,9 +1226,8 @@ export default function App() {
                           <p className="service-description">{item.service_description || "Sin descripción."}</p>
                         </div>
                         <div className="service-admin-meta config-meta">
-                          <span>Precio: {formatPrice(item.price)}</span>
-                          <span>Duración visible: {formatDuration(item.duration_visible_minutes)}</span>
-                          <span>Bloquea agenda: {formatDuration(item.blocking_duration_minutes)}</span>
+                          <span>{formatPrice(item.price)} · {formatDuration(item.duration_visible_minutes)}</span>
+                          <span>Bloqueo {formatAdminMinutes(item.blocking_duration_minutes)}</span>
                         </div>
                         <div className="row-actions">
                           <button className="edit-action" onClick={() => openBarberServiceForm(item)}>{item.assigned ? "Editar" : "Asignar"}</button>
@@ -1284,13 +1329,65 @@ export default function App() {
         </div>
       ) : null}
 
+      {quickServiceConfig ? (
+        <div className="modal-layer">
+          <section className="dialog-card service-dialog quick-config-dialog">
+            <div>
+              <p className="eyebrow">Configurar servicio</p>
+              <h3>{quickServiceConfig.name}</h3>
+              <p>Asigná profesionales y ajustá precio, duración visible y bloqueo de agenda.</p>
+            </div>
+            {barberServiceMessage ? (
+              <div className="admin-success" role="status">
+                <span>{barberServiceMessage}</span>
+                <button type="button" onClick={() => setBarberServiceMessage("")} aria-label="Cerrar mensaje">×</button>
+              </div>
+            ) : null}
+            {quickConfigLoading ? (
+              <div className="services-empty compact-empty"><span>Cargando configuración...</span></div>
+            ) : (
+              <div className="quick-config-list">
+                {quickServiceItems.map((item) => (
+                  <article key={item.barber_id} className="quick-config-row">
+                    <div>
+                      <strong>{displayBarberName(item.barber_name)}</strong>
+                      <span className={`mini-status ${item.assigned && item.active ? "active" : ""}`}>{item.assigned && item.active ? "Lo ofrece" : "No lo ofrece"}</span>
+                    </div>
+                    <div className="quick-config-meta">
+                      {item.assigned ? (
+                        <>
+                          <span>{formatPrice(item.price)}</span>
+                          <span>{formatDuration(item.duration_visible_minutes)}</span>
+                          <span>Bloqueo {formatAdminMinutes(item.blocking_duration_minutes)}</span>
+                        </>
+                      ) : (
+                        <span>Sin configurar</span>
+                      )}
+                    </div>
+                    <div className="row-actions">
+                      <button className={item.assigned ? "edit-action" : "configure-action"} onClick={() => openBarberServiceForm(item)}>{item.assigned ? "Editar" : "Asignar"}</button>
+                      {item.assigned ? (
+                        <button className={item.active ? "warning-action" : "reactivate-action"} onClick={() => setBarberServiceConfirm(item)}>{item.active ? "Desactivar" : "Reactivar"}</button>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+            <menu>
+              <button type="button" className="ghost" disabled={barberServiceSaving} onClick={() => { setQuickServiceConfig(null); setQuickServiceItems([]); }}>Cerrar</button>
+            </menu>
+          </section>
+        </div>
+      ) : null}
+
       {barberServiceForm ? (
         <div className="modal-layer">
           <form className="dialog-card service-dialog config-dialog" onSubmit={submitBarberServiceForm}>
             <div>
               <p className="eyebrow">{barberServiceForm.mode === "assign" ? "Asignar servicio" : "Editar configuración"}</p>
               <h3>{barberServiceForm.service_name}</h3>
-              <p>{selectedConfigBarber ? displayBarberName(selectedConfigBarber.name) : "Profesional seleccionado"}</p>
+              <p>{barberServiceForm.barber_name || selectedConfigBarber ? displayBarberName(barberServiceForm.barber_name || selectedConfigBarber.name) : "Profesional seleccionado"}</p>
             </div>
             <label className="toggle-row">
               <input type="checkbox" checked={barberServiceForm.priceConsultation} onChange={(e) => setBarberServiceForm({ ...barberServiceForm, priceConsultation: e.target.checked, price: e.target.checked ? "" : barberServiceForm.price })} />
@@ -1307,12 +1404,12 @@ export default function App() {
               <span>Duración visible a consultar</span>
             </label>
             {!barberServiceForm.durationConsultation ? (
-              <label>Duración visible
+              <label>Tiempo visible para el cliente
                 <input required type="number" min="1" step="1" value={barberServiceForm.duration_visible_minutes} onChange={(e) => setBarberServiceForm({ ...barberServiceForm, duration_visible_minutes: e.target.value })} />
                 <span className="field-help">Es informativa para cliente y WhatsApp.</span>
               </label>
             ) : null}
-            <label>Duración de bloqueo
+            <label>Tiempo de bloqueo en tu agenda.
               <input required type="number" min="1" step="1" value={barberServiceForm.blocking_duration_minutes} onChange={(e) => setBarberServiceForm({ ...barberServiceForm, blocking_duration_minutes: e.target.value })} />
               <span className="field-help">Es el tiempo real que ocupa en la agenda del profesional.</span>
             </label>

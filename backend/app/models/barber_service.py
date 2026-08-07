@@ -22,7 +22,7 @@ class BarberService(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     barber_id: Mapped[int] = mapped_column("peluquero_id", ForeignKey("peluqueros.id"), nullable=False, index=True)
     service_id: Mapped[int] = mapped_column("servicio_id", ForeignKey("servicios.id"), nullable=False, index=True)
-    price: Mapped[Decimal] = mapped_column("precio", Numeric(10, 2), nullable=True, default=Decimal("0.00"))
+    price: Mapped[Decimal] = mapped_column("precio", Numeric(10, 2), nullable=True)
     visible_duration_minutes: Mapped[int] = mapped_column("duracion_visible_minutos", Integer, nullable=True)
     blocking_duration_minutes: Mapped[int] = mapped_column(
         "duracion_bloqueo_minutos",

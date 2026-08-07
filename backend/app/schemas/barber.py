@@ -8,5 +8,6 @@ class BarberRead(BaseModel):
     photo_url: str | None = None
     active: bool
     order: int
+    appointment_interval_minutes: int
 
     model_config = ConfigDict(from_attributes=True)
