@@ -31,6 +31,10 @@ export const api = {
   createAdminService: (payload) => request("/admin/services", { method: "POST", body: JSON.stringify(payload) }),
   updateAdminService: (id, payload) => request(`/admin/services/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   updateAdminServiceStatus: (id, payload) => request(`/admin/services/${id}/status`, { method: "PATCH", body: JSON.stringify(payload) }),
+  adminBarberServices: (barberId) => request(`/admin/barbers/${barberId}/services`),
+  assignBarberService: (barberId, payload) => request(`/admin/barbers/${barberId}/services`, { method: "POST", body: JSON.stringify(payload) }),
+  updateBarberService: (barberId, serviceId, payload) => request(`/admin/barbers/${barberId}/services/${serviceId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  updateBarberServiceStatus: (barberId, serviceId, payload) => request(`/admin/barbers/${barberId}/services/${serviceId}/status`, { method: "PATCH", body: JSON.stringify(payload) }),
   barbers: () => request("/barbers"),
   availability: (date, barberId = null, serviceId = null) => {
     const suffix = barberId ? `&barber_id=${encodeURIComponent(barberId)}` : "";

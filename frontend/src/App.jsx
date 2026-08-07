@@ -14,19 +14,6 @@ const SERVICE_FILTERS = {
   all: "Todos",
 };
 
-const BARBER_VISUALS = {
-  marcelo: {
-    name: "Marcelo Navarro",
-    description: "Cortes clásicos, barba y atención unisex.",
-    photo_url: "/barbers/marcelo.jpeg",
-  },
-  jeremias: {
-    name: "Jeremías Vivas",
-    description: "Atención unisex, cortes actuales y turnos de apoyo.",
-    photo_url: "/barbers/jeremias.jpeg",
-  },
-};
-
 function todayISO() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
 }
@@ -127,7 +114,7 @@ function whatsappMessage(booking) {
     "",
     `Tu turno en ${BUSINESS_NAME} fue confirmado.`,
     "",
-    `Peluquero: ${normalizeBarberName(booking.barber_name)}`,
+    `Peluquero: ${displayBarberName(booking.barber_name)}`,
     `Servicio: ${booking.service_name}`,
     `Precio: ${formatPrice(booking.service_price)}`,
     `Duración: ${formatDuration(booking.service_visible_duration_minutes)}`,
@@ -196,24 +183,9 @@ function initials(name) {
     .toUpperCase();
 }
 
-function normalizeBarber(barber) {
-  const originalName = barber?.name || barber?.barber_name || "";
-  const isJeremias = Number(barber?.id || barber?.barber_id) === 2 || originalName.includes("Equipo") || originalName.includes("Jerem");
-  const visual = isJeremias ? BARBER_VISUALS.jeremias : BARBER_VISUALS.marcelo;
-  return {
-    ...barber,
-    name: visual.name,
-    barber_name: visual.name,
-    description: visual.description,
-    photo_url: visual.photo_url,
-  };
-}
-
-function normalizeBarberName(name) {
+function displayBarberName(name) {
   if (!name) return "-";
-  if (name === "Sin preferencia") return name;
-  if (name.includes("Equipo") || name.includes("Jerem")) return BARBER_VISUALS.jeremias.name;
-  return BARBER_VISUALS.marcelo.name;
+  return name;
 }
 
 function barberById(barbers, barberId) {
@@ -240,8 +212,8 @@ function reservationStepNumber(step) {
 }
 
 function BarberAvatar({ barber, name, size = "sm" }) {
-  const displayName = barber?.name || normalizeBarberName(name);
-  const photoUrl = barber?.photo_url || (displayName.includes("Jerem") ? BARBER_VISUALS.jeremias.photo_url : BARBER_VISUALS.marcelo.photo_url);
+  const displayName = barber?.name || displayBarberName(name);
+  const photoUrl = barber?.photo_url || "";
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -256,7 +228,7 @@ function BarberAvatar({ barber, name, size = "sm" }) {
 }
 
 function BarberLabel({ barber, name }) {
-  const displayName = barber?.name || normalizeBarberName(name);
+  const displayName = barber?.name || displayBarberName(name);
   return (
     <span className="barber-label">
       <BarberAvatar barber={barber} name={displayName} />
@@ -266,7 +238,7 @@ function BarberLabel({ barber, name }) {
 }
 
 function Summary({ barber, service, date, time, customer, phone }) {
-  const barberName = barber ? normalizeBarberName(barber) : "";
+  const barberName = barber ? displayBarberName(barber) : "";
   return (
     <div className="summary">
       {barber ? <div><span>Peluquero</span><strong><BarberLabel name={barberName} /></strong></div> : null}
@@ -317,6 +289,13 @@ export default function App() {
   const [serviceConfirm, setServiceConfirm] = useState(null);
   const [serviceSaving, setServiceSaving] = useState(false);
   const [serviceMessage, setServiceMessage] = useState("");
+  const [configBarberId, setConfigBarberId] = useState(null);
+  const [barberServiceConfigs, setBarberServiceConfigs] = useState([]);
+  const [barberServiceSearch, setBarberServiceSearch] = useState("");
+  const [barberServiceForm, setBarberServiceForm] = useState(null);
+  const [barberServiceConfirm, setBarberServiceConfirm] = useState(null);
+  const [barberServiceSaving, setBarberServiceSaving] = useState(false);
+  const [barberServiceMessage, setBarberServiceMessage] = useState("");
   const [cancelToken] = useState(cancellationTokenFromPath());
   const [cancelAppointmentData, setCancelAppointmentData] = useState(null);
   const [cancelStatus, setCancelStatus] = useState("loading");
@@ -347,13 +326,28 @@ export default function App() {
       return matchesSearch && matchesFilter;
     });
   }, [adminServices, serviceFilter, serviceSearch]);
+  const selectedConfigBarber = useMemo(
+    () => barberById(barbers, configBarberId),
+    [barbers, configBarberId]
+  );
+  const visibleBarberServiceConfigs = useMemo(() => {
+    const query = barberServiceSearch.trim().toLowerCase();
+    return barberServiceConfigs.filter((item) => {
+      if (!query) return true;
+      return [
+        item.service_name,
+        item.service_category,
+        item.service_description,
+      ].filter(Boolean).some((value) => value.toLowerCase().includes(query));
+    });
+  }, [barberServiceConfigs, barberServiceSearch]);
   const isReservationFlow = view === "client" && RESERVATION_STEPS.includes(step);
   const currentReservationStep = reservationStepNumber(step);
   const reservationProgress = currentReservationStep ? `${currentReservationStep * 20}%` : "0%";
 
   useEffect(() => {
     api.services().then(setServices).catch((err) => setError(err.message));
-    api.barbers().then((items) => setBarbers(items.map(normalizeBarber))).catch((err) => setError(err.message));
+    api.barbers().then(setBarbers).catch((err) => setError(err.message));
   }, []);
 
   useEffect(() => {
@@ -370,7 +364,7 @@ export default function App() {
     if (!cancelToken) return;
     api.cancellationDetails(cancelToken)
       .then((data) => {
-        setCancelAppointmentData({ ...data, barber_name: normalizeBarberName(data.barber_name) });
+        setCancelAppointmentData(data);
         setCancelStatus("ready");
         setCancelError("");
       })
@@ -418,6 +412,18 @@ export default function App() {
   }, [view, token, adminSection]);
 
   useEffect(() => {
+    if (view === "admin" && token && adminSection === "barberServices" && !configBarberId && barbers.length) {
+      setConfigBarberId(String(barbers[0].id));
+    }
+  }, [view, token, adminSection, configBarberId, barbers]);
+
+  useEffect(() => {
+    if (view === "admin" && token && adminSection === "barberServices" && configBarberId) {
+      loadBarberServiceConfigs(configBarberId);
+    }
+  }, [view, token, adminSection, configBarberId]);
+
+  useEffect(() => {
     if (view === "admin") {
       api.services().then(setServices).catch((err) => setError(err.message));
     }
@@ -450,8 +456,8 @@ export default function App() {
     try {
       setAgenda((await api.agenda(adminDate)).map((slot) => ({
         ...slot,
-        barber_name: normalizeBarberName(slot.barber_name),
-        appointment: slot.appointment ? { ...slot.appointment, barber_name: normalizeBarberName(slot.appointment.barber_name) } : slot.appointment,
+        barber_name: displayBarberName(slot.barber_name),
+        appointment: slot.appointment ? { ...slot.appointment, barber_name: displayBarberName(slot.appointment.barber_name) } : slot.appointment,
       })));
     } catch (err) {
       setError(err.message);
@@ -461,6 +467,15 @@ export default function App() {
   async function loadAdminServices() {
     try {
       setAdminServices(await api.adminServices());
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function loadBarberServiceConfigs(nextBarberId = configBarberId) {
+    if (!nextBarberId) return;
+    try {
+      setBarberServiceConfigs(await api.adminBarberServices(nextBarberId));
     } catch (err) {
       setError(err.message);
     }
@@ -486,6 +501,74 @@ export default function App() {
       category: service.category || "",
       active: service.active,
     });
+  }
+
+  function openBarberServiceForm(item) {
+    setBarberServiceMessage("");
+    setBarberServiceForm({
+      mode: item.assigned ? "edit" : "assign",
+      service_id: item.service_id,
+      service_name: item.service_name,
+      price: item.price ?? "",
+      priceConsultation: item.price === null || item.price === undefined,
+      duration_visible_minutes: item.duration_visible_minutes ?? "",
+      durationConsultation: item.duration_visible_minutes === null || item.duration_visible_minutes === undefined,
+      blocking_duration_minutes: item.blocking_duration_minutes || selectedConfigBarber?.appointment_interval_minutes || 20,
+      active: item.assigned ? item.active : true,
+    });
+  }
+
+  function barberServicePayload(form) {
+    return {
+      ...(form.mode === "assign" ? { service_id: Number(form.service_id) } : {}),
+      price: form.priceConsultation ? null : String(form.price),
+      duration_visible_minutes: form.durationConsultation ? null : Number(form.duration_visible_minutes),
+      blocking_duration_minutes: Number(form.blocking_duration_minutes),
+      active: form.active,
+    };
+  }
+
+  async function submitBarberServiceForm(event) {
+    event.preventDefault();
+    if (!barberServiceForm || barberServiceSaving || !configBarberId) return;
+    setBarberServiceSaving(true);
+    setError("");
+    setBarberServiceMessage("");
+    try {
+      const payload = barberServicePayload(barberServiceForm);
+      if (barberServiceForm.mode === "assign") {
+        await api.assignBarberService(configBarberId, payload);
+        setBarberServiceMessage("Servicio asignado al profesional.");
+      } else {
+        await api.updateBarberService(configBarberId, barberServiceForm.service_id, payload);
+        setBarberServiceMessage("Configuración actualizada.");
+      }
+      setBarberServiceForm(null);
+      await loadBarberServiceConfigs(configBarberId);
+      await loadAdminServices();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBarberServiceSaving(false);
+    }
+  }
+
+  async function confirmBarberServiceStatusChange() {
+    if (!barberServiceConfirm || barberServiceSaving || !configBarberId) return;
+    setBarberServiceSaving(true);
+    setError("");
+    setBarberServiceMessage("");
+    try {
+      await api.updateBarberServiceStatus(configBarberId, barberServiceConfirm.service_id, { active: !barberServiceConfirm.active });
+      setBarberServiceMessage(barberServiceConfirm.active ? "Servicio desactivado para el profesional." : "Servicio reactivado para el profesional.");
+      setBarberServiceConfirm(null);
+      await loadBarberServiceConfigs(configBarberId);
+      await loadAdminServices();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBarberServiceSaving(false);
+    }
   }
 
   async function submitServiceForm(event) {
@@ -555,7 +638,7 @@ export default function App() {
           phone: normalizePhoneInput(client.phone),
         },
       });
-      setBooking({ ...saved, barber_name: normalizeBarberName(saved.barber_name) });
+      setBooking(saved);
       setStep("confirmation");
     } catch (err) {
       setError(err.message);
@@ -958,8 +1041,13 @@ export default function App() {
               <div className="admin-toolbar">
                 <div>
                   <p className="eyebrow">Panel privado</p>
-                  <h2>{adminSection === "agenda" ? `Agenda - ${formatDate(adminDate)}` : "Servicios"}</h2>
+                  <h2>
+                    {adminSection === "agenda" ? `Agenda - ${formatDate(adminDate)}` : null}
+                    {adminSection === "services" ? "Servicios" : null}
+                    {adminSection === "barberServices" ? "Profesionales y servicios" : null}
+                  </h2>
                   {adminSection === "services" ? <p className="admin-subtitle">Gestioná el catálogo de servicios del salón.</p> : null}
+                  {adminSection === "barberServices" ? <p className="admin-subtitle">Definí qué ofrece cada profesional, con precio y duración propios.</p> : null}
                 </div>
                 <div className="toolbar-actions">
                   {adminSection === "agenda" ? <input type="date" value={adminDate} onChange={(e) => setAdminDate(e.target.value)} /> : null}
@@ -969,6 +1057,7 @@ export default function App() {
               <div className="admin-section-tabs" role="tablist" aria-label="Panel administrador">
                 <button className={`admin-section-tab ${adminSection === "agenda" ? "active" : ""}`} onClick={() => setAdminSection("agenda")}>Agenda</button>
                 <button className={`admin-section-tab ${adminSection === "services" ? "active" : ""}`} onClick={() => setAdminSection("services")}>Servicios</button>
+                <button className={`admin-section-tab ${adminSection === "barberServices" ? "active" : ""}`} onClick={() => setAdminSection("barberServices")}>Profesionales y servicios</button>
               </div>
 
               {adminSection === "agenda" ? (
@@ -1009,7 +1098,7 @@ export default function App() {
                     </div>
                   )}
                 </>
-              ) : (
+              ) : adminSection === "services" ? (
                 <div className="services-admin">
                   {serviceMessage ? (
                     <div className="admin-success" role="status">
@@ -1050,6 +1139,63 @@ export default function App() {
                         <strong>{adminServices.length ? "No encontramos servicios con esos filtros." : "Aún no hay servicios."}</strong>
                         <span>{adminServices.length ? "Probá cambiar la búsqueda o el estado seleccionado." : "Creá el primero para comenzar a configurar el salón."}</span>
                         {!adminServices.length ? <button className="primary" onClick={openNewServiceForm}>Nuevo servicio</button> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <div className="services-admin barber-services-admin">
+                  {barberServiceMessage ? (
+                    <div className="admin-success" role="status">
+                      <span>{barberServiceMessage}</span>
+                      <button type="button" onClick={() => setBarberServiceMessage("")} aria-label="Cerrar mensaje">×</button>
+                    </div>
+                  ) : null}
+                  <div className="admin-tabs config-barber-tabs" role="tablist" aria-label="Profesionales">
+                    {barbers.map((barber) => (
+                      <button key={barber.id} className={`admin-tab ${String(configBarberId) === String(barber.id) ? "active" : ""}`} onClick={() => setConfigBarberId(String(barber.id))}>
+                        <BarberAvatar barber={barber} />
+                        <span>{barber.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="services-toolbar config-toolbar">
+                    <div>
+                      <p className="eyebrow">Configuración</p>
+                      <strong>{selectedConfigBarber ? displayBarberName(selectedConfigBarber.name) : "Seleccioná un profesional"}</strong>
+                      {selectedConfigBarber ? <span>Intervalo base: {formatDuration(selectedConfigBarber.appointment_interval_minutes)}</span> : null}
+                    </div>
+                    <label className="control-field">Buscar servicio<input type="search" placeholder="Ej: Corte, Alisado..." value={barberServiceSearch} onChange={(e) => setBarberServiceSearch(e.target.value)} /></label>
+                  </div>
+                  <div className="services-list">
+                    {visibleBarberServiceConfigs.map((item) => (
+                      <article key={item.service_id} className={`admin-service-card barber-service-card ${!item.service_active || (item.assigned && !item.active) ? "inactive" : ""}`}>
+                        <div className="admin-service-main">
+                          <div className="admin-service-title">
+                            <strong>{item.service_name}</strong>
+                            <span className={`service-status-pill ${item.assigned ? "" : "neutral"}`}>{item.assigned ? item.active ? "Asignado activo" : "Asignado inactivo" : "No asignado"}</span>
+                            {!item.service_active ? <span className="service-status-pill muted">Servicio global inactivo</span> : null}
+                          </div>
+                          <span className="service-category">{item.service_category || "Sin categoría"}</span>
+                          <p className="service-description">{item.service_description || "Sin descripción."}</p>
+                        </div>
+                        <div className="service-admin-meta config-meta">
+                          <span>Precio: {formatPrice(item.price)}</span>
+                          <span>Duración visible: {formatDuration(item.duration_visible_minutes)}</span>
+                          <span>Bloquea agenda: {formatDuration(item.blocking_duration_minutes)}</span>
+                        </div>
+                        <div className="row-actions">
+                          <button className="edit-action" onClick={() => openBarberServiceForm(item)}>{item.assigned ? "Editar" : "Asignar"}</button>
+                          {item.assigned ? (
+                            <button className={item.active ? "warning-action" : "reactivate-action"} onClick={() => setBarberServiceConfirm(item)}>{item.active ? "Desactivar" : "Reactivar"}</button>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))}
+                    {!visibleBarberServiceConfigs.length ? (
+                      <div className="services-empty">
+                        <strong>No encontramos servicios con esa búsqueda.</strong>
+                        <span>Probá cambiar el texto o revisar el catálogo global.</span>
                       </div>
                     ) : null}
                   </div>
@@ -1133,6 +1279,70 @@ export default function App() {
             <menu>
               <button type="button" className="ghost" disabled={serviceSaving} onClick={() => setServiceConfirm(null)}>Volver</button>
               <button className="primary" type="button" disabled={serviceSaving} onClick={confirmServiceStatusChange}>{serviceSaving ? "Guardando..." : serviceConfirm.active ? "Desactivar" : "Activar"}</button>
+            </menu>
+          </section>
+        </div>
+      ) : null}
+
+      {barberServiceForm ? (
+        <div className="modal-layer">
+          <form className="dialog-card service-dialog config-dialog" onSubmit={submitBarberServiceForm}>
+            <div>
+              <p className="eyebrow">{barberServiceForm.mode === "assign" ? "Asignar servicio" : "Editar configuración"}</p>
+              <h3>{barberServiceForm.service_name}</h3>
+              <p>{selectedConfigBarber ? displayBarberName(selectedConfigBarber.name) : "Profesional seleccionado"}</p>
+            </div>
+            <label className="toggle-row">
+              <input type="checkbox" checked={barberServiceForm.priceConsultation} onChange={(e) => setBarberServiceForm({ ...barberServiceForm, priceConsultation: e.target.checked, price: e.target.checked ? "" : barberServiceForm.price })} />
+              <span>Precio a consultar</span>
+            </label>
+            {!barberServiceForm.priceConsultation ? (
+              <label>Precio
+                <input required type="number" min="0" step="0.01" value={barberServiceForm.price} onChange={(e) => setBarberServiceForm({ ...barberServiceForm, price: e.target.value })} />
+                <span className="field-help">Usá pesos argentinos. Ejemplo: 18000.</span>
+              </label>
+            ) : null}
+            <label className="toggle-row">
+              <input type="checkbox" checked={barberServiceForm.durationConsultation} onChange={(e) => setBarberServiceForm({ ...barberServiceForm, durationConsultation: e.target.checked, duration_visible_minutes: e.target.checked ? "" : barberServiceForm.duration_visible_minutes })} />
+              <span>Duración visible a consultar</span>
+            </label>
+            {!barberServiceForm.durationConsultation ? (
+              <label>Duración visible
+                <input required type="number" min="1" step="1" value={barberServiceForm.duration_visible_minutes} onChange={(e) => setBarberServiceForm({ ...barberServiceForm, duration_visible_minutes: e.target.value })} />
+                <span className="field-help">Es informativa para cliente y WhatsApp.</span>
+              </label>
+            ) : null}
+            <label>Duración de bloqueo
+              <input required type="number" min="1" step="1" value={barberServiceForm.blocking_duration_minutes} onChange={(e) => setBarberServiceForm({ ...barberServiceForm, blocking_duration_minutes: e.target.value })} />
+              <span className="field-help">Es el tiempo real que ocupa en la agenda del profesional.</span>
+            </label>
+            <label className="toggle-row">
+              <input type="checkbox" checked={barberServiceForm.active} onChange={(e) => setBarberServiceForm({ ...barberServiceForm, active: e.target.checked })} />
+              <span>Disponible para reservas nuevas con este profesional</span>
+            </label>
+            <menu>
+              <button type="button" className="ghost" disabled={barberServiceSaving} onClick={() => setBarberServiceForm(null)}>Cancelar</button>
+              <button className="primary" type="submit" disabled={barberServiceSaving}>{barberServiceSaving ? "Guardando..." : "Guardar"}</button>
+            </menu>
+          </form>
+        </div>
+      ) : null}
+
+      {barberServiceConfirm ? (
+        <div className="modal-layer">
+          <section className="dialog-card service-dialog">
+            <div>
+              <p className="eyebrow">{barberServiceConfirm.active ? "Desactivar para profesional" : "Reactivar para profesional"}</p>
+              <h3>{barberServiceConfirm.service_name}</h3>
+            </div>
+            {barberServiceConfirm.active ? (
+              <p>Este servicio dejará de aparecer en nuevas reservas para {selectedConfigBarber ? displayBarberName(selectedConfigBarber.name) : "este profesional"}. Los turnos existentes no se modifican.</p>
+            ) : (
+              <p>El servicio volverá a estar disponible para nuevas reservas con este profesional si el servicio global también está activo.</p>
+            )}
+            <menu>
+              <button type="button" className="ghost" disabled={barberServiceSaving} onClick={() => setBarberServiceConfirm(null)}>Volver</button>
+              <button className="primary" type="button" disabled={barberServiceSaving} onClick={confirmBarberServiceStatusChange}>{barberServiceSaving ? "Guardando..." : barberServiceConfirm.active ? "Desactivar" : "Reactivar"}</button>
             </menu>
           </section>
         </div>
