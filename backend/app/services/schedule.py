@@ -1,4 +1,5 @@
 from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from hashlib import sha256
 from secrets import token_urlsafe
 from zoneinfo import ZoneInfo
@@ -8,11 +9,22 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..models.appointment import Appointment
+from ..models.appointment import (
+    BLOCKING_CONFIRMED_STATUSES,
+    CANCELLED_STATUSES,
+    LEGACY_STATUS_CANCELLED,
+    STATUS_CANCELLED,
+    STATUS_CONFIRMED,
+    STATUS_EXPIRED,
+    STATUS_PENDING_PAYMENT,
+)
 from ..models.barber import Barber
 from ..models.barber_service import BarberService
 from ..models.block import BlockedSlot
 from ..models.client import Client
+from ..models.payment import PAYMENT_STATUS_PENDING, Payment
 from ..models.service import Service
 from ..schemas.appointment import AgendaSlot, AppointmentCreate, AppointmentRead, PublicCancellationAppointment
 from ..schemas.block import BlockCreate
@@ -71,6 +83,10 @@ def is_future_slot(slot_date: date, slot_time: time) -> bool:
 
 def is_past_slot(slot_date: date, slot_time: time) -> bool:
     return slot_datetime(slot_date, slot_time) < now_in_argentina()
+
+
+def naive_now_for_db() -> datetime:
+    return now_in_argentina().replace(tzinfo=None)
 
 
 def ranges_overlap(start_a: time, duration_a: int, start_b: time, duration_b: int) -> bool:
@@ -134,8 +150,56 @@ def get_active_barber_service(db: Session, barber_id: int, service_id: int) -> B
     return offering
 
 
+def expire_pending_payments(db: Session) -> None:
+    expired = db.scalars(
+        select(Appointment).where(
+            Appointment.status == STATUS_PENDING_PAYMENT,
+            Appointment.payment_expires_at.is_not(None),
+            Appointment.payment_expires_at <= naive_now_for_db(),
+        )
+    ).all()
+    if not expired:
+        return
+    for appointment in expired:
+        appointment.status = STATUS_EXPIRED
+    db.commit()
+
+
+def is_blocking_appointment(appointment: Appointment) -> bool:
+    if appointment.status in BLOCKING_CONFIRMED_STATUSES:
+        return True
+    if appointment.status == STATUS_PENDING_PAYMENT:
+        return bool(appointment.payment_expires_at and appointment.payment_expires_at > naive_now_for_db())
+    return False
+
+
+def calculate_deposit(offering: BarberService) -> tuple[Decimal | None, Decimal | None]:
+    if not offering.requires_deposit:
+        return None, None
+    if offering.deposit_type == "fijo":
+        if offering.deposit_amount is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "La seña fija no está configurada.")
+        deposit = offering.deposit_amount
+    elif offering.deposit_type == "porcentaje":
+        if offering.price is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "No se puede calcular una seña porcentual con precio a consultar.")
+        if offering.deposit_percentage is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "El porcentaje de seña no está configurado.")
+        deposit = (offering.price * offering.deposit_percentage / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    else:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "El tipo de seña no está configurado.")
+    balance = None if offering.price is None else max(offering.price - deposit, Decimal("0.00"))
+    return deposit, balance
+
+
 def appointment_end_time(appointment: Appointment) -> time:
     return add_minutes(appointment.start_time, appointment.service_blocking_duration_minutes)
+
+
+def latest_payment_status(appointment: Appointment) -> str | None:
+    if not appointment.payments:
+        return None
+    return sorted(appointment.payments, key=lambda payment: payment.id)[-1].status
 
 
 def appointment_to_read(appointment: Appointment) -> AppointmentRead:
@@ -153,6 +217,10 @@ def appointment_to_read(appointment: Appointment) -> AppointmentRead:
         service_price=appointment.service_price,
         service_visible_duration_minutes=appointment.service_visible_duration_minutes,
         service_blocking_duration_minutes=appointment.service_blocking_duration_minutes,
+        deposit_amount=appointment.deposit_amount,
+        remaining_balance=appointment.remaining_balance,
+        payment_expires_at=appointment.payment_expires_at,
+        payment_status=latest_payment_status(appointment),
         client_id=appointment.client_id,
         client_first_name=appointment.client.first_name,
         client_last_name=appointment.client.last_name,
@@ -171,6 +239,8 @@ def appointment_to_public_cancellation(appointment: Appointment) -> PublicCancel
         service_price=appointment.service_price,
         service_visible_duration_minutes=appointment.service_visible_duration_minutes,
         service_blocking_duration_minutes=appointment.service_blocking_duration_minutes,
+        deposit_amount=appointment.deposit_amount,
+        remaining_balance=appointment.remaining_balance,
         client_first_name=appointment.client.first_name,
         client_last_name=appointment.client.last_name,
     )
@@ -190,6 +260,16 @@ def generate_unique_cancellation_token(db: Session) -> tuple[str, str]:
     raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "No se pudo generar el token de cancelacion.")
 
 
+def generate_unique_payment_status_token(db: Session) -> tuple[str, str]:
+    for _ in range(5):
+        token = token_urlsafe(32)
+        token_hash = hash_cancellation_token(token)
+        exists = db.scalar(select(Appointment.id).where(Appointment.payment_status_token_hash == token_hash))
+        if not exists:
+            return token, token_hash
+    raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "No se pudo generar el token de estado de pago.")
+
+
 def occupied_appointment(
     db: Session,
     slot_date: date,
@@ -197,17 +277,18 @@ def occupied_appointment(
     barber_id: int,
     blocking_duration_minutes: int,
 ) -> Appointment | None:
+    expire_pending_payments(db)
     appointments = db.scalars(
         select(Appointment).where(
             Appointment.date == slot_date,
             Appointment.barber_id == barber_id,
-            Appointment.status != "Cancelado",
         )
     ).all()
     return next(
         (
             appointment
             for appointment in appointments
+            if is_blocking_appointment(appointment)
             if ranges_overlap(
                 slot_time,
                 blocking_duration_minutes,
@@ -220,17 +301,18 @@ def occupied_appointment(
 
 
 def overlapping_appointment_at_slot(db: Session, slot_date: date, slot_time: time, barber: Barber) -> Appointment | None:
+    expire_pending_payments(db)
     appointments = db.scalars(
         select(Appointment).where(
             Appointment.date == slot_date,
             Appointment.barber_id == barber.id,
-            Appointment.status != "Cancelado",
         )
     ).all()
     return next(
         (
             appointment
             for appointment in appointments
+            if is_blocking_appointment(appointment)
             if ranges_overlap(
                 slot_time,
                 barber.appointment_interval_minutes,
@@ -275,6 +357,7 @@ def ensure_available(
 
 
 def available_slots(db: Session, slot_date: date, barber_id: int | None = None, service_id: int | None = None) -> list[time]:
+    expire_pending_payments(db)
     if slot_date.weekday() not in (1, 2, 3, 4, 5):
         return []
 
@@ -329,7 +412,7 @@ def choose_available_barber(db: Session, slot_date: date, slot_time: time, servi
     counts = dict(
         db.execute(
             select(Appointment.barber_id, func.count(Appointment.id))
-            .where(Appointment.date == slot_date, Appointment.status != "Cancelado")
+            .where(Appointment.date == slot_date, Appointment.status.in_(BLOCKING_CONFIRMED_STATUSES + (STATUS_PENDING_PAYMENT,)))
             .group_by(Appointment.barber_id)
         ).all()
     )
@@ -337,6 +420,7 @@ def choose_available_barber(db: Session, slot_date: date, slot_time: time, servi
 
 
 def create_appointment(db: Session, payload: AppointmentCreate, origin: str) -> Appointment:
+    expire_pending_payments(db)
     if payload.barber_id is not None:
         barber = get_active_barber(db, payload.barber_id)
     else:
@@ -351,6 +435,12 @@ def create_appointment(db: Session, payload: AppointmentCreate, origin: str) -> 
         phone=payload.client.phone.strip(),
     )
     cancellation_token, cancellation_token_hash = generate_unique_cancellation_token(db)
+    requires_payment = origin == "APP" and offering.requires_deposit
+    payment_status_token, payment_status_token_hash = (
+        generate_unique_payment_status_token(db) if requires_payment else (None, None)
+    )
+    deposit_amount, remaining_balance = calculate_deposit(offering) if requires_payment else (None, None)
+    payment_expires_at = naive_now_for_db() + timedelta(minutes=settings.payment_reservation_minutes) if requires_payment else None
     appointment = Appointment(
         client=client,
         service=offering.service,
@@ -358,14 +448,21 @@ def create_appointment(db: Session, payload: AppointmentCreate, origin: str) -> 
         service_price=offering.price,
         service_visible_duration_minutes=offering.visible_duration_minutes,
         service_blocking_duration_minutes=offering.blocking_duration_minutes,
+        deposit_amount=deposit_amount,
+        remaining_balance=remaining_balance,
+        payment_expires_at=payment_expires_at,
         date=payload.date,
         start_time=payload.start_time,
-        status="Confirmado",
+        status=STATUS_PENDING_PAYMENT if requires_payment else STATUS_CONFIRMED,
         origin=origin,
         cancellation_token_hash=cancellation_token_hash,
+        payment_status_token_hash=payment_status_token_hash,
     )
     appointment._cancellation_token = cancellation_token
+    appointment._payment_status_token = payment_status_token
     db.add(appointment)
+    if requires_payment:
+        db.add(Payment(appointment=appointment, amount=deposit_amount, status=PAYMENT_STATUS_PENDING))
     try:
         db.commit()
     except Exception:
@@ -373,6 +470,7 @@ def create_appointment(db: Session, payload: AppointmentCreate, origin: str) -> 
         raise HTTPException(status.HTTP_409_CONFLICT, "El horario ya fue reservado.")
     db.refresh(appointment)
     appointment._cancellation_token = cancellation_token
+    appointment._payment_status_token = payment_status_token
     return appointment
 
 
@@ -380,7 +478,7 @@ def cancel_appointment(db: Session, appointment_id: int) -> Appointment:
     appointment = db.get(Appointment, appointment_id)
     if not appointment:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Turno no encontrado.")
-    appointment.status = "Cancelado"
+    appointment.status = STATUS_CANCELLED
     db.commit()
     db.refresh(appointment)
     return appointment
@@ -392,8 +490,10 @@ def appointment_by_cancellation_token(db: Session, token: str) -> Appointment:
     )
     if not appointment:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Token de cancelacion invalido.")
-    if appointment.status == "Cancelado":
+    if appointment.status in CANCELLED_STATUSES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "El turno ya fue cancelado.")
+    if appointment.status == STATUS_EXPIRED:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "La reserva ya venció.")
     if is_past_slot(appointment.date, appointment.start_time):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No se puede cancelar un turno pasado.")
     return appointment
@@ -401,7 +501,7 @@ def appointment_by_cancellation_token(db: Session, token: str) -> Appointment:
 
 def cancel_appointment_by_token(db: Session, token: str) -> Appointment:
     appointment = appointment_by_cancellation_token(db, token)
-    appointment.status = "Cancelado"
+    appointment.status = STATUS_CANCELLED
     db.commit()
     db.refresh(appointment)
     return appointment
@@ -438,6 +538,7 @@ def delete_block(db: Session, block_id: int) -> None:
 
 
 def daily_agenda(db: Session, slot_date: date) -> list[AgendaSlot]:
+    expire_pending_payments(db)
     barbers = active_barbers(db)
     blocks = {item.start_time: item for item in db.scalars(select(BlockedSlot).where(BlockedSlot.date == slot_date)).all()}
     agenda: list[AgendaSlot] = []
@@ -446,10 +547,11 @@ def daily_agenda(db: Session, slot_date: date) -> list[AgendaSlot]:
             appointment = overlapping_appointment_at_slot(db, slot_date, slot, barber)
             block = blocks.get(slot)
             if appointment:
+                slot_status = "Pendiente de pago" if appointment.status == STATUS_PENDING_PAYMENT else "Reservado"
                 agenda.append(
                     AgendaSlot(
                         time=slot,
-                        status="Reservado",
+                        status=slot_status,
                         barber_id=barber.id,
                         barber_name=barber.name,
                         appointment=appointment_to_read(appointment),

@@ -1,17 +1,19 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..schemas.appointment import (
     AgendaSlot,
+    AppointmentCreationResponse,
     AppointmentCreate,
     AppointmentRead,
     ManualAppointmentCreate,
-    PublicAppointmentCreated,
     PublicCancellationAppointment,
 )
+from ..models.appointment import STATUS_EXPIRED, STATUS_PENDING_PAYMENT
+from ..models.payment import PAYMENT_STATUS_CANCELLED
 from ..services.auth import require_admin
 from ..services.schedule import (
     appointment_by_cancellation_token,
@@ -22,16 +24,37 @@ from ..services.schedule import (
     create_appointment,
     daily_agenda,
 )
+from ..services.payments import latest_payment, ensure_checkout_for_appointment
 
 router = APIRouter(prefix="/appointments", tags=["appointments"])
 
 
-@router.post("", response_model=PublicAppointmentCreated, status_code=201)
+@router.post("", response_model=AppointmentCreationResponse, status_code=201)
 def create_public_appointment(payload: AppointmentCreate, db: Session = Depends(get_db)):
     appointment = create_appointment(db, payload, origin="APP")
-    return PublicAppointmentCreated(
-        **appointment_to_read(appointment).model_dump(),
-        cancellation_token=appointment._cancellation_token,
+    checkout = None
+    payment_status_token = getattr(appointment, "_payment_status_token", None)
+    if appointment.status == STATUS_PENDING_PAYMENT and payment_status_token:
+        try:
+            checkout = ensure_checkout_for_appointment(db, appointment, payment_status_token)
+        except HTTPException as exc:
+            payment = latest_payment(db, appointment.id)
+            if payment:
+                payment.status = PAYMENT_STATUS_CANCELLED
+            appointment.status = STATUS_EXPIRED
+            db.commit()
+            raise exc
+    appointment_read = appointment_to_read(appointment)
+    return AppointmentCreationResponse(
+        status=appointment.status,
+        appointment=appointment_read,
+        appointment_id=appointment.id,
+        deposit_amount=appointment.deposit_amount,
+        remaining_balance=appointment.remaining_balance,
+        expires_at=appointment.payment_expires_at,
+        cancellation_token=None if appointment.status == STATUS_PENDING_PAYMENT else appointment._cancellation_token,
+        payment_status_token=payment_status_token,
+        checkout_url=checkout.checkout_url if checkout else None,
     )
 
 

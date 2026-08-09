@@ -42,6 +42,8 @@ export const api = {
     return request(`/availability?date=${date}${suffix}${serviceSuffix}`);
   },
   createAppointment: (payload) => request("/appointments", { method: "POST", body: JSON.stringify(payload) }),
+  startPayment: (appointmentId, token) => request(`/payments/appointments/${appointmentId}?token=${encodeURIComponent(token)}`, { method: "POST" }),
+  paymentStatus: (token) => request(`/payments/status/${encodeURIComponent(token)}`),
   login: (payload) => request("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
   agenda: (date) => request(`/appointments/agenda?date_=${date}`),
   createManualAppointment: (payload) => request("/appointments/manual", { method: "POST", body: JSON.stringify(payload) }),

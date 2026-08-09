@@ -70,6 +70,16 @@ function formatServiceDuration(service) {
   return formatDuration(service.duration_visible_minutes);
 }
 
+function formatDepositSummary(service) {
+  if (!service?.requires_deposit) return null;
+  const deposit = service.deposit_amount;
+  const balance = service.remaining_balance;
+  return {
+    depositLabel: deposit === null || deposit === undefined ? "Seña a confirmar" : formatPrice(deposit),
+    balanceLabel: balance === null || balance === undefined ? "Saldo a consultar" : formatPrice(balance),
+  };
+}
+
 function serviceMetaLabel(service) {
   const price = formatServicePrice(service);
   const duration = formatServiceDuration(service);
@@ -122,13 +132,15 @@ function whatsappMessage(booking) {
     `Peluquero: ${displayBarberName(booking.barber_name)}`,
     `Servicio: ${booking.service_name}`,
     `Precio: ${formatPrice(booking.service_price)}`,
+    booking.deposit_amount !== null && booking.deposit_amount !== undefined ? `Seña abonada: ${formatPrice(booking.deposit_amount)}` : null,
+    booking.remaining_balance !== null && booking.remaining_balance !== undefined ? `Saldo en el salón: ${formatPrice(booking.remaining_balance)}` : null,
     `Duración: ${formatDuration(booking.service_visible_duration_minutes)}`,
     `Fecha: ${formatDate(booking.date)}`,
     `Hora: ${timeLabel(booking.start_time)}`,
     "",
     "Para cancelar tu turno:",
     link,
-  ].join("\n");
+  ].filter((line) => line !== null).join("\n");
 }
 
 function whatsappUrl(booking) {
@@ -141,6 +153,15 @@ function whatsappUrl(booking) {
 function cancellationTokenFromPath() {
   const match = window.location.pathname.match(/^\/cancelar\/([^/]+)\/?$/);
   return match ? decodeURIComponent(match[1]) : null;
+}
+
+function paymentReturnFromPath() {
+  const match = window.location.pathname.match(/^\/pago\/(exito|pendiente|error)\/?$/);
+  if (!match) return null;
+  return {
+    result: match[1],
+    token: new URLSearchParams(window.location.search).get("token") || "",
+  };
 }
 
 function currentMinutesInArgentina() {
@@ -204,7 +225,9 @@ function selectedBarberName(barbers, barberId) {
 
 function appointmentServiceLabel(appointment) {
   if (!appointment) return "-";
-  return `${appointment.service_name} · ${formatPrice(appointment.service_price)} · Duración: ${formatDuration(appointment.service_visible_duration_minutes)} · Ocupa: ${formatDuration(appointment.service_blocking_duration_minutes)}`;
+  const payment = appointment.payment_status ? ` · Pago: ${appointment.payment_status}` : "";
+  const deposit = appointment.deposit_amount !== null && appointment.deposit_amount !== undefined ? ` · Seña: ${formatPrice(appointment.deposit_amount)}` : "";
+  return `${appointment.service_name} · ${formatPrice(appointment.service_price)} · Duración: ${formatDuration(appointment.service_visible_duration_minutes)} · Ocupa: ${formatDuration(appointment.service_blocking_duration_minutes)}${deposit}${payment}`;
 }
 
 function pluralize(value, singular, plural) {
@@ -305,11 +328,16 @@ export default function App() {
   const [quickServiceItems, setQuickServiceItems] = useState([]);
   const [quickConfigLoading, setQuickConfigLoading] = useState(false);
   const [cancelToken] = useState(cancellationTokenFromPath());
+  const [paymentReturn] = useState(paymentReturnFromPath());
+  const [paymentStatus, setPaymentStatus] = useState(null);
+  const [paymentStatusState, setPaymentStatusState] = useState(paymentReturn ? "loading" : "idle");
+  const [paymentStatusError, setPaymentStatusError] = useState("");
   const [cancelAppointmentData, setCancelAppointmentData] = useState(null);
   const [cancelStatus, setCancelStatus] = useState("loading");
   const [cancelError, setCancelError] = useState("");
   const phoneError = client.phone && !isValidPhoneInput(client.phone) ? "Ingresá un teléfono válido de 10 u 11 números." : "";
   const selectedService = services.find((item) => item.id === Number(serviceId));
+  const selectedDepositSummary = formatDepositSummary(selectedService);
   const currentBarberName = selectedBarberName(barbers, barberId);
   const visibleAvailable = useMemo(
     () => available.filter((slot) => isBookableSlot(date, slot)),
@@ -382,6 +410,21 @@ export default function App() {
         setCancelError(err.message);
       });
   }, [cancelToken]);
+
+  useEffect(() => {
+    if (!paymentReturn?.token) return;
+    setPaymentStatusState("loading");
+    api.paymentStatus(paymentReturn.token)
+      .then((data) => {
+        setPaymentStatus(data);
+        setPaymentStatusState("ready");
+        setPaymentStatusError("");
+      })
+      .catch((err) => {
+        setPaymentStatusState("error");
+        setPaymentStatusError(err.message);
+      });
+  }, [paymentReturn]);
 
   useEffect(() => {
     if (step === "time" && date) {
@@ -676,7 +719,17 @@ export default function App() {
           phone: normalizePhoneInput(client.phone),
         },
       });
-      setBooking(saved);
+      const appointment = saved.appointment || saved;
+      setBooking({
+        ...appointment,
+        creation_status: saved.status || appointment.status,
+        cancellation_token: saved.cancellation_token || appointment.cancellation_token,
+        deposit_amount: saved.deposit_amount ?? appointment.deposit_amount,
+        remaining_balance: saved.remaining_balance ?? appointment.remaining_balance,
+        payment_expires_at: saved.expires_at ?? appointment.payment_expires_at,
+        payment_status_token: saved.payment_status_token,
+        checkout_url: saved.checkout_url,
+      });
       setStep("confirmation");
     } catch (err) {
       setError(err.message);
@@ -814,6 +867,22 @@ export default function App() {
     resetClient();
   }
 
+  async function openMercadoPagoCheckout() {
+    if (!booking?.checkout_url && booking?.payment_status_token) {
+      try {
+        const response = await api.startPayment(booking.id, booking.payment_status_token);
+        setBooking((current) => current ? { ...current, checkout_url: response.checkout_url } : current);
+        window.location.href = response.checkout_url;
+      } catch (err) {
+        setError(err.message);
+      }
+      return;
+    }
+    if (booking?.checkout_url) {
+      window.location.href = booking.checkout_url;
+    }
+  }
+
   async function confirmPublicCancellation() {
     if (!cancelToken) return;
     setCancelError("");
@@ -839,7 +908,7 @@ export default function App() {
           <span className={`status ${slot.status === "Libre" ? "free" : slot.status === "Bloqueado" ? "blocked" : "booked"}`}>{slot.appointment?.origin === "MANUAL" ? "Registrado manualmente" : slot.status}</span>
           <div className="row-actions">
             {slot.status === "Libre" && <><button onClick={() => setManual({ time: slot.time, barber_id: slot.barber_id, service_id: "", first_name: "", last_name: "", phone: "" })}>Registrar</button><button onClick={() => blockSlot(slot)}>Bloquear</button></>}
-            {slot.status === "Reservado" && <button onClick={() => cancelAppointment(slot)}>Cancelar</button>}
+            {(slot.status === "Reservado" || slot.status === "Pendiente de pago") && <button onClick={() => cancelAppointment(slot)}>Cancelar</button>}
             {slot.status === "Bloqueado" && <button onClick={() => unblockSlot(slot)}>Desbloquear</button>}
           </div>
         </div>
@@ -901,6 +970,78 @@ export default function App() {
               <>
                 <p className="eyebrow">Cancelación de turno</p>
                 <h2>{cancelError === "El turno ya fue cancelado." ? "Este turno ya fue cancelado." : "El enlace de cancelación no es válido o ya no está disponible."}</h2>
+                <button className="primary" onClick={() => { window.location.href = "/"; }}>Volver</button>
+              </>
+            ) : null}
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  if (paymentReturn) {
+    const confirmed = paymentStatus?.appointment_status === "CONFIRMED";
+    const pending = paymentStatus?.appointment_status === "PENDING_PAYMENT" || paymentStatus?.payment_status === "PENDING";
+    const expired = paymentStatus?.appointment_status === "EXPIRED";
+    return (
+      <div className="shell">
+        <header className="topbar">
+          <button className="brand" onClick={() => { window.location.href = "/"; }} aria-label="Volver al inicio">
+            <span className="logo-slot"><img src="/marcelo-navarro-logo.png" alt="Marcelo Navarro Peluqueria Unisex" /></span>
+            <span><strong>Marcelo Navarro</strong><small>Turnos cada 20 min</small></span>
+          </button>
+        </header>
+
+        <main>
+          <section className="confirmation payment-page">
+            {paymentStatusState === "loading" ? (
+              <>
+                <p className="eyebrow">Pago de seña</p>
+                <h2>Estamos verificando tu pago...</h2>
+              </>
+            ) : null}
+
+            {paymentStatusState === "ready" && paymentStatus ? (
+              <>
+                <p className="eyebrow">Pago de seña</p>
+                <div className="success-mark">{confirmed ? "OK" : pending ? "..." : "!"}</div>
+                <h2>
+                  {confirmed
+                    ? "Pago recibido. Tu turno está confirmado."
+                    : expired
+                      ? "La reserva venció."
+                      : pending
+                        ? "Estamos verificando tu pago."
+                        : "No pudimos confirmar el pago."}
+                </h2>
+                {!confirmed ? <p className="lead cancel-question">La llegada desde Mercado Pago no confirma el turno por sí sola. Estamos usando el estado real del sistema.</p> : null}
+                <Summary
+                  barber={paymentStatus.barber_name}
+                  service={{ name: paymentStatus.service_name }}
+                  date={paymentStatus.date}
+                  time={paymentStatus.start_time}
+                />
+                {paymentStatus.deposit_amount !== null && paymentStatus.deposit_amount !== undefined ? (
+                  <div className="deposit-preview confirmed-deposit">
+                    <span>Seña: {formatPrice(paymentStatus.deposit_amount)}</span>
+                    <span>Saldo a abonar en el salón: {formatPrice(paymentStatus.remaining_balance)}</span>
+                    {paymentStatus.expires_at ? <p>Retención hasta: {new Date(paymentStatus.expires_at).toLocaleString("es-AR")}</p> : null}
+                  </div>
+                ) : null}
+                <div className="confirmation-actions">
+                  {pending && paymentStatus.checkout_url ? (
+                    <button className="primary" onClick={() => { window.location.href = paymentStatus.checkout_url; }}>Volver a Mercado Pago</button>
+                  ) : null}
+                  <button className="ghost" onClick={() => { window.location.href = "/"; }}>Volver al inicio</button>
+                </div>
+              </>
+            ) : null}
+
+            {paymentStatusState === "error" ? (
+              <>
+                <p className="eyebrow">Pago de seña</p>
+                <h2>No pudimos verificar el pago.</h2>
+                <p className="lead cancel-question">{paymentStatusError || "El enlace no es válido o ya no está disponible."}</p>
                 <button className="primary" onClick={() => { window.location.href = "/"; }}>Volver</button>
               </>
             ) : null}
@@ -1053,10 +1194,19 @@ export default function App() {
                   <span className={phoneError ? "field-error" : "field-help"}>{phoneError || "Ingresá código de área y número."}</span>
                 </label>
                 <Summary barber={currentBarberName} service={selectedService} date={date} time={time} customer={`${client.first_name} ${client.last_name}`.trim()} />
+                {selectedService?.requires_deposit ? (
+                  <div className="deposit-preview">
+                    <strong>Este turno requiere seña</strong>
+                    <span>Precio: {formatServicePrice(selectedService)}</span>
+                    <span>Seña para reservar: {selectedDepositSummary?.depositLabel}</span>
+                    <span>Saldo a abonar en el salón: {selectedDepositSummary?.balanceLabel}</span>
+                    <p>Tu turno quedará reservado durante 10 minutos mientras realizás el pago.</p>
+                  </div>
+                ) : null}
                 {barberId === ANY_BARBER ? <p className="field-help">El precio final depende del profesional asignado y se confirma al guardar el turno.</p> : null}
                 <div className="step-actions">
                   <button className="ghost" type="button" onClick={goBackToTime}>← Volver</button>
-                  <button className="primary" type="submit" disabled={bookingPending || Boolean(phoneError)}>{bookingPending ? "Confirmando turno..." : "Confirmar turno"}</button>
+                  <button className="primary" type="submit" disabled={bookingPending || Boolean(phoneError)}>{bookingPending ? "Procesando..." : selectedService?.requires_deposit ? "Continuar al pago" : "Confirmar turno"}</button>
                 </div>
               </form>
             </section>
@@ -1256,10 +1406,14 @@ export default function App() {
         <div className="modal-layer confirmation-modal" role="presentation">
           <section className="dialog-card confirmed-dialog" role="dialog" aria-modal="true" aria-labelledby="confirmed-title" tabIndex="-1" ref={confirmationDialogRef}>
             <button className="dialog-close" type="button" onClick={closeConfirmationModal} aria-label="Cerrar">Cerrar</button>
-            <div className="success-mark">OK</div>
-            <p className="eyebrow">Turno confirmado</p>
-            <h2 id="confirmed-title">Turno confirmado</h2>
-            <p className="modal-lead">Tu turno fue reservado correctamente.</p>
+            <div className="success-mark">{booking.creation_status === "PENDING_PAYMENT" ? "10" : "OK"}</div>
+            <p className="eyebrow">{booking.creation_status === "PENDING_PAYMENT" ? "Pendiente de pago" : "Turno confirmado"}</p>
+            <h2 id="confirmed-title">{booking.creation_status === "PENDING_PAYMENT" ? "Turno retenido" : "Turno confirmado"}</h2>
+            <p className="modal-lead">
+              {booking.creation_status === "PENDING_PAYMENT"
+                ? "El horario quedó retenido temporalmente mientras se completa el pago de la seña."
+                : "Tu turno fue reservado correctamente."}
+            </p>
             <Summary
               barber={booking.barber_name}
               service={{
@@ -1272,14 +1426,35 @@ export default function App() {
               customer={`${booking.client_first_name} ${booking.client_last_name}`}
               phone={booking.client_phone}
             />
-            <div className="cancel-link-box highlighted">
-              <p>Guardá tu enlace de cancelación.<br />También podés enviártelo por WhatsApp usando el botón de abajo.</p>
-              <span className="cancel-url">{bookingCancellationLink(booking)}</span>
-            </div>
-            <div className="modal-actions">
-              <button className="primary whatsapp-button" type="button" onClick={openWhatsAppConfirmation}>Enviar registro de turno por Whatsapp</button>
-              <button className="ghost" type="button" onClick={copyCancellationLink}>Copiar enlace de cancelación</button>
-            </div>
+            {booking.deposit_amount !== null && booking.deposit_amount !== undefined ? (
+              <div className="deposit-preview confirmed-deposit">
+                <span>Seña para reservar: {formatPrice(booking.deposit_amount)}</span>
+                <span>Saldo a abonar en el salón: {formatPrice(booking.remaining_balance)}</span>
+                {booking.payment_expires_at ? <p>Vence: {new Date(booking.payment_expires_at).toLocaleString("es-AR")}</p> : null}
+              </div>
+            ) : null}
+            {booking.creation_status === "PENDING_PAYMENT" ? (
+              <div className="cancel-link-box highlighted">
+                <p>Tu horario está retenido durante {booking.payment_expires_at ? "unos minutos" : "el tiempo indicado"}.</p>
+                <span>Seña: {formatPrice(booking.deposit_amount)}</span>
+                {booking.payment_expires_at ? <span className="cancel-url">Vence: {new Date(booking.payment_expires_at).toLocaleString("es-AR")}</span> : null}
+                <div className="modal-actions">
+                  <button className="primary" type="button" disabled={!booking.checkout_url && !booking.payment_status_token} onClick={openMercadoPagoCheckout}>Pagar seña con Mercado Pago</button>
+                  <button className="ghost" type="button" onClick={closeConfirmationModal}>Cerrar</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="cancel-link-box highlighted">
+                  <p>Guardá tu enlace de cancelación.<br />También podés enviártelo por WhatsApp usando el botón de abajo.</p>
+                  <span className="cancel-url">{bookingCancellationLink(booking)}</span>
+                </div>
+                <div className="modal-actions">
+                  <button className="primary whatsapp-button" type="button" onClick={openWhatsAppConfirmation}>Enviar registro de turno por Whatsapp</button>
+                  <button className="ghost" type="button" onClick={copyCancellationLink}>Copiar enlace de cancelación</button>
+                </div>
+              </>
+            )}
             {copyMessage ? <span className="copy-message">{copyMessage}</span> : null}
           </section>
         </div>

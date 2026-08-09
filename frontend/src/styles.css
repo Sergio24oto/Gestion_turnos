@@ -125,6 +125,30 @@ button:disabled { cursor: not-allowed; opacity: .58; transform: none; box-shadow
 .service-card span, .date-card span { color: var(--muted); }
 .service-meta { display: grid; gap: 4px; color: var(--muted); line-height: 1.35; }
 .service-meta span { color: inherit; }
+.deposit-preview {
+  display: grid;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid rgba(198, 163, 106, .28);
+  border-radius: 16px;
+  background: rgba(198, 163, 106, .10);
+  color: #E7DED2;
+}
+.deposit-preview strong {
+  color: #F1ECE6;
+}
+.deposit-preview span {
+  color: #E7DED2;
+  font-weight: 800;
+}
+.deposit-preview p {
+  margin: 0;
+  color: #C6A36A;
+  line-height: 1.4;
+}
+.confirmed-deposit {
+  text-align: left;
+}
 .date-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
 .date-card { min-height: 86px; border-radius: 16px; border: 1px solid var(--line); background: #fffaf1; }
 .date-card:disabled { opacity: .38; cursor: not-allowed; background: #eee8df; }

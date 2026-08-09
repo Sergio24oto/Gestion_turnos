@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     secret_key: str = "change-this-secret-in-local-env"
     access_token_expire_minutes: int = 480
     frontend_origin: str = "http://localhost:5173"
+    payment_reservation_minutes: int = 10
+    mercadopago_access_token: str = ""
+    mercadopago_webhook_secret: str = ""
+    frontend_public_url: str = "http://localhost:5173"
+    backend_public_url: str = "http://localhost:8000"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

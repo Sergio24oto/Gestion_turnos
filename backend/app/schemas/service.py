@@ -13,6 +13,11 @@ class ServiceOfferingRead(BaseModel):
     duration_visible_minutes: int | None = Field(default=None, gt=0)
     blocking_duration_minutes: int = Field(gt=0)
     active: bool
+    requires_deposit: bool = False
+    deposit_type: str | None = None
+    deposit_amount: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    deposit_percentage: Optional[Decimal] = Field(default=None, gt=Decimal("0"), le=Decimal("100"), max_digits=5, decimal_places=2)
+    remaining_balance: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
     is_from_price: bool = False
     has_consultation_price: bool = False
     duration_depends_on_professional: bool = False
@@ -104,6 +109,10 @@ class BarberServiceAdminRead(BaseModel):
     duration_visible_minutes: int | None = Field(default=None, gt=0)
     blocking_duration_minutes: int = Field(gt=0)
     active: bool
+    requires_deposit: bool = False
+    deposit_type: str | None = None
+    deposit_amount: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    deposit_percentage: Optional[Decimal] = Field(default=None, gt=Decimal("0"), le=Decimal("100"), max_digits=5, decimal_places=2)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -114,6 +123,10 @@ class BarberServiceAdminCreate(BaseModel):
     duration_visible_minutes: int | None = Field(default=None, gt=0)
     blocking_duration_minutes: int = Field(gt=0)
     active: bool = True
+    requires_deposit: bool = False
+    deposit_type: str | None = None
+    deposit_amount: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    deposit_percentage: Optional[Decimal] = Field(default=None, gt=Decimal("0"), le=Decimal("100"), max_digits=5, decimal_places=2)
 
 
 class BarberServiceAdminUpdate(BaseModel):
@@ -121,6 +134,10 @@ class BarberServiceAdminUpdate(BaseModel):
     duration_visible_minutes: int | None = Field(default=None, gt=0)
     blocking_duration_minutes: int | None = Field(default=None, gt=0)
     active: bool | None = None
+    requires_deposit: bool | None = None
+    deposit_type: str | None = None
+    deposit_amount: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    deposit_percentage: Optional[Decimal] = Field(default=None, gt=Decimal("0"), le=Decimal("100"), max_digits=5, decimal_places=2)
 
 
 class BarberServiceStatusUpdate(BaseModel):

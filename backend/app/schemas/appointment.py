@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Optional
 
@@ -53,6 +53,10 @@ class AppointmentRead(BaseModel):
     service_price: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
     service_visible_duration_minutes: int | None = Field(default=None, gt=0)
     service_blocking_duration_minutes: int = Field(gt=0)
+    deposit_amount: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    remaining_balance: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    payment_expires_at: datetime | None = None
+    payment_status: str | None = None
     client_id: int
     client_first_name: str
     client_last_name: str
@@ -61,6 +65,41 @@ class AppointmentRead(BaseModel):
 
 class PublicAppointmentCreated(AppointmentRead):
     cancellation_token: str
+
+
+class AppointmentCreationResponse(BaseModel):
+    status: str
+    appointment: AppointmentRead | None = None
+    appointment_id: int | None = None
+    deposit_amount: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    remaining_balance: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    expires_at: datetime | None = None
+    cancellation_token: str | None = None
+    payment_status_token: str | None = None
+    checkout_url: str | None = None
+
+
+class PaymentStartResponse(BaseModel):
+    status: str
+    appointment_id: int
+    deposit_amount: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    expires_at: datetime | None = None
+    payment_status_token: str
+    checkout_url: str
+
+
+class PublicPaymentStatus(BaseModel):
+    appointment_status: str
+    payment_status: str | None = None
+    deposit_amount: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    remaining_balance: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    expires_at: datetime | None = None
+    barber_name: str
+    service_name: str
+    date: date
+    start_time: time
+    end_time: time
+    checkout_url: str | None = None
 
 
 class PublicCancellationAppointment(BaseModel):
@@ -73,6 +112,8 @@ class PublicCancellationAppointment(BaseModel):
     service_price: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
     service_visible_duration_minutes: int | None = Field(default=None, gt=0)
     service_blocking_duration_minutes: int = Field(gt=0)
+    deposit_amount: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    remaining_balance: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
     client_first_name: str
     client_last_name: str
 

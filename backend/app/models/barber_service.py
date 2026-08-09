@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Integer, Numeric, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
@@ -17,6 +17,11 @@ class BarberService(Base):
             name="ck_peluqueros_servicios_duracion_visible_positiva",
         ),
         CheckConstraint("duracion_bloqueo_minutos > 0", name="ck_peluqueros_servicios_duracion_bloqueo_positiva"),
+        CheckConstraint("monto_senia IS NULL OR monto_senia >= 0", name="ck_peluqueros_servicios_monto_senia_no_negativo"),
+        CheckConstraint(
+            "porcentaje_senia IS NULL OR (porcentaje_senia > 0 AND porcentaje_senia <= 100)",
+            name="ck_peluqueros_servicios_porcentaje_senia_valido",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -31,6 +36,14 @@ class BarberService(Base):
         default=20,
     )
     active: Mapped[bool] = mapped_column("activo", Boolean, nullable=False, default=True)
+    requires_deposit: Mapped[bool] = mapped_column("requiere_senia", Boolean, nullable=False, default=False)
+    deposit_type: Mapped[str] = mapped_column(
+        "tipo_senia",
+        Enum("fijo", "porcentaje", name="tipo_senia"),
+        nullable=True,
+    )
+    deposit_amount: Mapped[Decimal] = mapped_column("monto_senia", Numeric(10, 2), nullable=True)
+    deposit_percentage: Mapped[Decimal] = mapped_column("porcentaje_senia", Numeric(5, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column("creado_en", DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column("actualizado_en", DateTime, nullable=True, onupdate=func.now())
 

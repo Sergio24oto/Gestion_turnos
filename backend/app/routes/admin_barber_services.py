@@ -59,9 +59,34 @@ def relation_to_read(barber: Barber, service: Service, relation: BarberService |
         duration_visible_minutes=relation.visible_duration_minutes if relation else None,
         blocking_duration_minutes=relation.blocking_duration_minutes if relation else barber.appointment_interval_minutes,
         active=relation.active if relation else False,
+        requires_deposit=relation.requires_deposit if relation else False,
+        deposit_type=relation.deposit_type if relation else None,
+        deposit_amount=relation.deposit_amount if relation else None,
+        deposit_percentage=relation.deposit_percentage if relation else None,
         created_at=relation.created_at if relation else None,
         updated_at=relation.updated_at if relation else None,
     )
+
+
+def validate_deposit_config(
+    *,
+    requires_deposit: bool,
+    deposit_type: str | None,
+    deposit_amount,
+    deposit_percentage,
+    service_price,
+) -> None:
+    if not requires_deposit:
+        return
+    if deposit_type not in ("fijo", "porcentaje"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Seleccioná un tipo de seña válido.")
+    if deposit_type == "fijo" and deposit_amount is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ingresá el monto fijo de la seña.")
+    if deposit_type == "porcentaje":
+        if deposit_percentage is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ingresá el porcentaje de la seña.")
+        if service_price is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "No se puede usar seña porcentual con precio a consultar.")
 
 
 @router.get("", response_model=list[BarberServiceAdminRead])
@@ -92,6 +117,17 @@ def assign_barber_service(
         visible_duration_minutes=payload.duration_visible_minutes,
         blocking_duration_minutes=payload.blocking_duration_minutes,
         active=payload.active,
+        requires_deposit=payload.requires_deposit,
+        deposit_type=payload.deposit_type if payload.requires_deposit else None,
+        deposit_amount=payload.deposit_amount if payload.requires_deposit and payload.deposit_type == "fijo" else None,
+        deposit_percentage=payload.deposit_percentage if payload.requires_deposit and payload.deposit_type == "porcentaje" else None,
+    )
+    validate_deposit_config(
+        requires_deposit=relation.requires_deposit,
+        deposit_type=relation.deposit_type,
+        deposit_amount=relation.deposit_amount,
+        deposit_percentage=relation.deposit_percentage,
+        service_price=relation.price,
     )
     db.add(relation)
     db.commit()
@@ -120,6 +156,29 @@ def update_barber_service(
         relation.blocking_duration_minutes = data["blocking_duration_minutes"]
     if "active" in data:
         relation.active = data["active"]
+    if "requires_deposit" in data:
+        relation.requires_deposit = data["requires_deposit"]
+    if "deposit_type" in data:
+        relation.deposit_type = data["deposit_type"]
+    if "deposit_amount" in data:
+        relation.deposit_amount = data["deposit_amount"]
+    if "deposit_percentage" in data:
+        relation.deposit_percentage = data["deposit_percentage"]
+    if not relation.requires_deposit:
+        relation.deposit_type = None
+        relation.deposit_amount = None
+        relation.deposit_percentage = None
+    elif relation.deposit_type == "fijo":
+        relation.deposit_percentage = None
+    elif relation.deposit_type == "porcentaje":
+        relation.deposit_amount = None
+    validate_deposit_config(
+        requires_deposit=relation.requires_deposit,
+        deposit_type=relation.deposit_type,
+        deposit_amount=relation.deposit_amount,
+        deposit_percentage=relation.deposit_percentage,
+        service_price=relation.price,
+    )
     relation.updated_at = datetime.now()
     db.commit()
     db.refresh(relation)
