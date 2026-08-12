@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from decimal import Decimal
 from urllib.parse import quote, urlparse
@@ -20,6 +21,52 @@ def is_configured() -> bool:
 
 def public_url(base_url: str, path: str) -> str:
     return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
+
+
+def partial_sha256(value: str | None) -> str | None:
+    if not value:
+        return None
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+
+
+def signature_diagnostics(x_signature: str | None, x_request_id: str | None, data_id: str | None, secret: str) -> dict:
+    ts = None
+    v1 = None
+    for part in (x_signature or "").split(","):
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key == "ts":
+            ts = value
+        elif key == "v1":
+            v1 = value
+
+    request_id_hash = partial_sha256(x_request_id)
+    manifest_parts = []
+    if data_id:
+        manifest_parts.append(f"id:{data_id}")
+    if x_request_id:
+        manifest_parts.append(f"request-id-sha256-8:{request_id_hash}")
+    if ts:
+        manifest_parts.append(f"ts:{ts}")
+
+    return {
+        "x_signature_present": bool(x_signature),
+        "x_signature_length": len(x_signature or ""),
+        "x_request_id_present": bool(x_request_id),
+        "x_request_id_length": len(x_request_id or ""),
+        "data_id": data_id,
+        "ts": ts,
+        "v1_present": bool(v1),
+        "v1_length": len(v1 or ""),
+        "webhook_secret_configured": bool(secret),
+        "webhook_secret_length": len(secret or ""),
+        "x_request_id_sha256_8": request_id_hash,
+        "webhook_secret_sha256_8": partial_sha256(secret),
+        "manifest_redacted": ";".join(manifest_parts) + (";" if manifest_parts else ""),
+    }
 
 
 def is_public_https_url(url: str) -> bool:
@@ -101,13 +148,18 @@ def get_payment(payment_id: str) -> dict:
 
 def validate_webhook_signature(*, x_signature: str | None, x_request_id: str | None, data_id: str | None) -> bool:
     secret = settings.mercadopago_webhook_secret.strip()
+    diagnostics = signature_diagnostics(x_signature, x_request_id, data_id, secret)
     if not secret:
+        logger.info("Diagnostico webhook Mercado Pago: %s resultado=invalid reason=missing_secret", diagnostics)
         logger.warning("Webhook Mercado Pago rechazado: MERCADOPAGO_WEBHOOK_SECRET no está configurado.")
         return False
     try:
         WebhookSignatureValidator.validate(x_signature, x_request_id, data_id, secret)
+        logger.info("Diagnostico webhook Mercado Pago: %s resultado=valid reason=none", diagnostics)
         return True
-    except InvalidWebhookSignatureError:
+    except InvalidWebhookSignatureError as exc:
+        reason = getattr(getattr(exc, "reason", None), "value", "invalid_signature")
+        logger.info("Diagnostico webhook Mercado Pago: %s resultado=invalid reason=%s", diagnostics, reason)
         logger.warning("Webhook Mercado Pago rechazado por firma inválida para payment_id=%s.", data_id or "sin-id")
         return False
 
