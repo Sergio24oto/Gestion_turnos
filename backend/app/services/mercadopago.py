@@ -1,6 +1,6 @@
 import logging
 from decimal import Decimal
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import mercadopago
 from mercadopago.webhook import InvalidWebhookSignatureError, WebhookSignatureValidator
@@ -20,6 +20,11 @@ def is_configured() -> bool:
 
 def public_url(base_url: str, path: str) -> str:
     return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
+
+
+def is_public_https_url(url: str) -> bool:
+    parsed = urlparse(url.strip())
+    return parsed.scheme == "https" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
 
 
 def create_preference(*, appointment, payment, payment_status_token: str) -> dict:
@@ -48,6 +53,9 @@ def create_preference(*, appointment, payment, payment_status_token: str) -> dic
             "failure": public_url(frontend_url, f"/pago/error?token={quote(payment_status_token)}"),
         },
     }
+    backend_url = settings.backend_public_url.strip()
+    if is_public_https_url(backend_url):
+        payload["notification_url"] = public_url(backend_url, "/api/webhooks/mercadopago")
 
     try:
         response = mercadopago.SDK(settings.mercadopago_access_token).preference().create(payload)
