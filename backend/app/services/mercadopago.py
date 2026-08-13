@@ -1,5 +1,5 @@
-import hashlib
 import logging
+from dataclasses import dataclass
 from decimal import Decimal
 from urllib.parse import quote, urlparse
 
@@ -15,6 +15,12 @@ class MercadoPagoError(Exception):
     pass
 
 
+@dataclass(frozen=True)
+class WebhookValidationResult:
+    valid: bool
+    reason: str | None = None
+
+
 def is_configured() -> bool:
     return bool(settings.mercadopago_access_token.strip())
 
@@ -23,62 +29,20 @@ def public_url(base_url: str, path: str) -> str:
     return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
 
 
-def partial_sha256(value: str | None) -> str | None:
-    if not value:
-        return None
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
-
-
-def signature_diagnostics(x_signature: str | None, x_request_id: str | None, data_id: str | None, secret: str) -> dict:
-    ts = None
-    v1 = None
-    for part in (x_signature or "").split(","):
-        if "=" not in part:
-            continue
-        key, value = part.split("=", 1)
-        key = key.strip().lower()
-        value = value.strip()
-        if key == "ts":
-            ts = value
-        elif key == "v1":
-            v1 = value
-
-    request_id_hash = partial_sha256(x_request_id)
-    manifest_parts = []
-    if data_id:
-        manifest_parts.append(f"id:{data_id}")
-    if x_request_id:
-        manifest_parts.append(f"request-id-sha256-8:{request_id_hash}")
-    if ts:
-        manifest_parts.append(f"ts:{ts}")
-
-    return {
-        "x_signature_present": bool(x_signature),
-        "x_signature_length": len(x_signature or ""),
-        "x_request_id_present": bool(x_request_id),
-        "x_request_id_length": len(x_request_id or ""),
-        "data_id": data_id,
-        "ts": ts,
-        "v1_present": bool(v1),
-        "v1_length": len(v1 or ""),
-        "webhook_secret_configured": bool(secret),
-        "webhook_secret_length": len(secret or ""),
-        "x_request_id_sha256_8": request_id_hash,
-        "webhook_secret_sha256_8": partial_sha256(secret),
-        "manifest_redacted": ";".join(manifest_parts) + (";" if manifest_parts else ""),
-    }
-
-
 def is_public_https_url(url: str) -> bool:
     parsed = urlparse(url.strip())
     return parsed.scheme == "https" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
 
 
-def create_preference(*, appointment, payment, payment_status_token: str) -> dict:
+def sdk() -> mercadopago.SDK:
     if not is_configured():
         raise MercadoPagoError("Mercado Pago no está configurado.")
+    return mercadopago.SDK(settings.mercadopago_access_token)
 
+
+def build_preference_payload(*, appointment, payment, payment_status_token: str) -> dict:
     frontend_url = settings.frontend_public_url.rstrip("/")
+    backend_url = settings.backend_public_url.strip()
     amount = Decimal(payment.amount).quantize(Decimal("0.01"))
     payload = {
         "items": [
@@ -100,12 +64,20 @@ def create_preference(*, appointment, payment, payment_status_token: str) -> dic
             "failure": public_url(frontend_url, f"/pago/error?token={quote(payment_status_token)}"),
         },
     }
-    backend_url = settings.backend_public_url.strip()
     if is_public_https_url(backend_url):
         payload["notification_url"] = public_url(backend_url, "/api/webhooks/mercadopago")
+    return payload
+
+
+def create_preference(*, appointment, payment, payment_status_token: str) -> dict:
+    payload = build_preference_payload(
+        appointment=appointment,
+        payment=payment,
+        payment_status_token=payment_status_token,
+    )
 
     try:
-        response = mercadopago.SDK(settings.mercadopago_access_token).preference().create(payload)
+        response = sdk().preference().create(payload)
     except Exception as exc:
         logger.warning("No se pudo crear la preference de Mercado Pago: %s", exc)
         raise MercadoPagoError("No se pudo crear el checkout de Mercado Pago.") from exc
@@ -117,7 +89,7 @@ def create_preference(*, appointment, payment, payment_status_token: str) -> dic
         raise MercadoPagoError("Mercado Pago rechazó la solicitud.")
 
     preference_id = preference.get("id")
-    checkout_url = preference.get("sandbox_init_point") or preference.get("init_point")
+    checkout_url = preference.get("init_point") or preference.get("sandbox_init_point")
     if not preference_id or not checkout_url:
         logger.warning("Mercado Pago no devolvió id/init_point para el pago %s.", payment.id)
         raise MercadoPagoError("Mercado Pago no devolvió un checkout válido.")
@@ -130,10 +102,8 @@ def create_preference(*, appointment, payment, payment_status_token: str) -> dic
 
 
 def get_payment(payment_id: str) -> dict:
-    if not is_configured():
-        raise MercadoPagoError("Mercado Pago no está configurado.")
     try:
-        response = mercadopago.SDK(settings.mercadopago_access_token).payment().get(payment_id)
+        response = sdk().payment().get(payment_id)
     except Exception as exc:
         logger.warning("No se pudo consultar el payment %s en Mercado Pago: %s", payment_id, exc)
         raise MercadoPagoError("No se pudo consultar el pago en Mercado Pago.") from exc
@@ -146,22 +116,23 @@ def get_payment(payment_id: str) -> dict:
     return payment
 
 
-def validate_webhook_signature(*, x_signature: str | None, x_request_id: str | None, data_id: str | None) -> bool:
+def validate_webhook_signature(
+    *,
+    x_signature: str | None,
+    x_request_id: str | None,
+    data_id: str | None,
+) -> WebhookValidationResult:
     secret = settings.mercadopago_webhook_secret.strip()
-    diagnostics = signature_diagnostics(x_signature, x_request_id, data_id, secret)
     if not secret:
-        logger.info("Diagnostico webhook Mercado Pago: %s resultado=invalid reason=missing_secret", diagnostics)
         logger.warning("Webhook Mercado Pago rechazado: MERCADOPAGO_WEBHOOK_SECRET no está configurado.")
-        return False
+        return WebhookValidationResult(valid=False, reason="missing_secret")
     try:
         WebhookSignatureValidator.validate(x_signature, x_request_id, data_id, secret)
-        logger.info("Diagnostico webhook Mercado Pago: %s resultado=valid reason=none", diagnostics)
-        return True
+        return WebhookValidationResult(valid=True)
     except InvalidWebhookSignatureError as exc:
         reason = getattr(getattr(exc, "reason", None), "value", "invalid_signature")
-        logger.info("Diagnostico webhook Mercado Pago: %s resultado=invalid reason=%s", diagnostics, reason)
-        logger.warning("Webhook Mercado Pago rechazado por firma inválida para payment_id=%s.", data_id or "sin-id")
-        return False
+        logger.warning("Webhook Mercado Pago rechazado por firma inválida. reason=%s data_id=%s", reason, data_id or "sin-id")
+        return WebhookValidationResult(valid=False, reason=reason)
 
 
 def map_payment_status(status: str | None) -> str:

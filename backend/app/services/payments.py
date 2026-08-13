@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 from decimal import Decimal
 
 from fastapi import HTTPException, status
@@ -130,6 +131,16 @@ def payment_amount_matches(payment: Payment, mp_payment: dict) -> bool:
     return payment.currency == mp_payment.get("currency_id") and expected == amount
 
 
+def approved_datetime(mp_payment: dict) -> datetime:
+    approved_at = mp_payment.get("date_approved")
+    if approved_at:
+        try:
+            return datetime.fromisoformat(str(approved_at).replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            logger.warning("Mercado Pago devolvió date_approved inválido para payment_id=%s.", mp_payment.get("id") or "sin-id")
+    return naive_now_for_db()
+
+
 def payment_from_mp_payload(db: Session, mp_payment: dict) -> Payment | None:
     external_payment_id = str(mp_payment.get("id") or "")
     if external_payment_id:
@@ -146,6 +157,10 @@ def payment_from_mp_payload(db: Session, mp_payment: dict) -> Payment | None:
                 return payment
         except ValueError:
             return None
+        return None
+    if external_reference:
+        logger.warning("Payment Mercado Pago con external_reference inválido: %s.", external_reference)
+        return None
 
     metadata = mp_payment.get("metadata") or {}
     payment_attempt_id = metadata.get("payment_attempt_id")
@@ -195,7 +210,7 @@ def process_mercadopago_payment(db: Session, mp_payment: dict) -> Payment:
 
         payment.external_payment_id = external_payment_id
         payment.status = PAYMENT_STATUS_APPROVED
-        payment.approved_at = naive_now_for_db()
+        payment.approved_at = approved_datetime(mp_payment)
         appointment = payment.appointment
         if appointment.status == STATUS_PENDING_PAYMENT:
             if appointment.payment_expires_at and appointment.payment_expires_at <= naive_now_for_db():
