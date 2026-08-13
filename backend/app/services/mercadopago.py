@@ -1,6 +1,8 @@
 import logging
 from dataclasses import dataclass
 from decimal import Decimal
+import hashlib
+import hmac
 from urllib.parse import quote, urlparse
 
 import mercadopago
@@ -27,6 +29,88 @@ def is_configured() -> bool:
 
 def public_url(base_url: str, path: str) -> str:
     return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
+
+
+def partial_sha256(value: str | None, length: int = 12) -> str | None:
+    if not value:
+        return None
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:length]
+
+
+def parse_signature_header(x_signature: str | None) -> tuple[str | None, str | None]:
+    ts = None
+    v1 = None
+    for part in (x_signature or "").split(","):
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key == "ts":
+            ts = value
+        elif key == "v1":
+            v1 = value
+    return ts, v1
+
+
+def build_webhook_manifest(data_id: str | None, request_id: str | None, ts: str | None) -> str:
+    parts = []
+    if data_id:
+        parts.append(f"id:{data_id}")
+    if request_id:
+        parts.append(f"request-id:{request_id}")
+    if ts:
+        parts.append(f"ts:{ts}")
+    return ";".join(parts) + (";" if parts else "")
+
+
+def redacted_webhook_manifest(data_id: str | None, request_id: str | None, ts: str | None) -> str:
+    parts = []
+    if data_id:
+        parts.append(f"id:{data_id}")
+    if request_id:
+        parts.append(f"request-id:{partial_sha256(request_id)}")
+    if ts:
+        parts.append(f"ts:{ts}")
+    return ";".join(parts) + (";" if parts else "")
+
+
+def log_webhook_signature_diagnostics(
+    *,
+    x_signature: str | None,
+    x_request_id: str | None,
+    x_railway_request_id: str | None,
+    data_id: str | None,
+    secret: str,
+    valid: bool,
+    reason: str | None,
+) -> None:
+    ts, v1 = parse_signature_header(x_signature)
+    computed_matches = None
+    if secret and v1 and ts:
+        manifest = build_webhook_manifest(data_id, x_request_id, ts)
+        computed = hmac.new(secret.encode("utf-8"), manifest.encode("utf-8"), hashlib.sha256).hexdigest()
+        computed_matches = hmac.compare_digest(computed, v1)
+
+    logger.info(
+        "Diagnostico HMAC Mercado Pago: "
+        "x_request_id_present=%s x_request_id_length=%s x_request_id_sha256_12=%s "
+        "x_railway_request_id_present=%s x_railway_request_id_length=%s x_railway_request_id_sha256_12=%s "
+        "request_ids_equal=%s data_id=%s ts=%s manifest_redacted=%s hmac_matches=%s result=%s reason=%s",
+        bool(x_request_id),
+        len(x_request_id or ""),
+        partial_sha256(x_request_id),
+        bool(x_railway_request_id),
+        len(x_railway_request_id or ""),
+        partial_sha256(x_railway_request_id),
+        x_request_id == x_railway_request_id,
+        data_id,
+        ts,
+        redacted_webhook_manifest(data_id, x_request_id, ts),
+        computed_matches,
+        "valid" if valid else "invalid",
+        reason or "none",
+    )
 
 
 def is_public_https_url(url: str) -> bool:
@@ -120,17 +204,45 @@ def validate_webhook_signature(
     *,
     x_signature: str | None,
     x_request_id: str | None,
+    x_railway_request_id: str | None = None,
     data_id: str | None,
 ) -> WebhookValidationResult:
     secret = settings.mercadopago_webhook_secret.strip()
     if not secret:
         logger.warning("Webhook Mercado Pago rechazado: MERCADOPAGO_WEBHOOK_SECRET no está configurado.")
+        log_webhook_signature_diagnostics(
+            x_signature=x_signature,
+            x_request_id=x_request_id,
+            x_railway_request_id=x_railway_request_id,
+            data_id=data_id,
+            secret=secret,
+            valid=False,
+            reason="missing_secret",
+        )
         return WebhookValidationResult(valid=False, reason="missing_secret")
     try:
         WebhookSignatureValidator.validate(x_signature, x_request_id, data_id, secret)
+        log_webhook_signature_diagnostics(
+            x_signature=x_signature,
+            x_request_id=x_request_id,
+            x_railway_request_id=x_railway_request_id,
+            data_id=data_id,
+            secret=secret,
+            valid=True,
+            reason=None,
+        )
         return WebhookValidationResult(valid=True)
     except InvalidWebhookSignatureError as exc:
         reason = getattr(getattr(exc, "reason", None), "value", "invalid_signature")
+        log_webhook_signature_diagnostics(
+            x_signature=x_signature,
+            x_request_id=x_request_id,
+            x_railway_request_id=x_railway_request_id,
+            data_id=data_id,
+            secret=secret,
+            valid=False,
+            reason=reason,
+        )
         logger.warning("Webhook Mercado Pago rechazado por firma inválida. reason=%s data_id=%s", reason, data_id or "sin-id")
         return WebhookValidationResult(valid=False, reason=reason)
 

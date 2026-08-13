@@ -49,9 +49,12 @@ async def mercadopago_webhook(
     if not data_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Notificación webhook sin data.id.")
 
+    original_x_request_id = request.headers.get("x-request-id")
+    x_railway_request_id = request.headers.get("x-railway-request-id")
     validation = mercadopago.validate_webhook_signature(
         x_signature=x_signature,
-        x_request_id=x_request_id,
+        x_request_id=original_x_request_id or x_request_id,
+        x_railway_request_id=x_railway_request_id,
         data_id=data_id,
     )
     if not validation.valid:
