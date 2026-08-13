@@ -92,8 +92,8 @@ def log_webhook_signature_diagnostics(
         computed = hmac.new(secret.encode("utf-8"), manifest.encode("utf-8"), hashlib.sha256).hexdigest()
         computed_matches = hmac.compare_digest(computed, v1)
 
-    logger.info(
-        "Diagnostico HMAC Mercado Pago: "
+    logger.warning(
+        "MP_SIGNATURE_DIAGNOSTIC "
         "x_request_id_present=%s x_request_id_length=%s x_request_id_sha256_12=%s "
         "x_railway_request_id_present=%s x_railway_request_id_length=%s x_railway_request_id_sha256_12=%s "
         "request_ids_equal=%s data_id=%s ts=%s manifest_redacted=%s hmac_matches=%s result=%s reason=%s",
