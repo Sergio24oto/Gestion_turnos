@@ -149,7 +149,7 @@ def build_preference_payload(*, appointment, payment, payment_status_token: str)
         },
     }
     if is_public_https_url(backend_url):
-        payload["notification_url"] = public_url(backend_url, "/api/webhooks/mercadopago")
+        payload["notification_url"] = public_url(backend_url, "/api/webhooks/mercadopago?source_news=webhooks")
     return payload
 
 
