@@ -150,6 +150,27 @@ function whatsappUrl(booking) {
   return `https://api.whatsapp.com/send?phone=${whatsappPhone}&text=${encodedMessage}`;
 }
 
+function paymentWhatsAppMessage(payment) {
+  return [
+    "Turno confirmado",
+    "",
+    `Peluquero: ${displayBarberName(payment.barber_name)}`,
+    `Servicio: ${payment.service_name}`,
+    `Precio total: ${formatPrice(payment.service_price)}`,
+    payment.deposit_amount !== null && payment.deposit_amount !== undefined ? `Seña abonada: ${formatPrice(payment.deposit_amount)}` : null,
+    payment.remaining_balance !== null && payment.remaining_balance !== undefined ? `Saldo pendiente: ${formatPrice(payment.remaining_balance)}` : null,
+    `Fecha: ${formatDate(payment.date)}`,
+    `Hora: ${timeLabel(payment.start_time)}`,
+    `Duración: ${formatDuration(payment.service_visible_duration_minutes)}`,
+  ].filter((line) => line !== null).join("\n");
+}
+
+function paymentWhatsAppUrl(payment) {
+  const encodedMessage = encodeURIComponent(paymentWhatsAppMessage(payment));
+  const whatsappPhone = prepareArgentineWhatsAppPhone(payment.client_phone);
+  return `https://api.whatsapp.com/send?phone=${whatsappPhone}&text=${encodedMessage}`;
+}
+
 function cancellationTokenFromPath() {
   const match = window.location.pathname.match(/^\/cancelar\/([^/]+)\/?$/);
   return match ? decodeURIComponent(match[1]) : null;
@@ -415,17 +436,33 @@ export default function App() {
 
   useEffect(() => {
     if (!paymentReturn?.token) return;
+    let cancelled = false;
+    let retryTimer = null;
+
+    function loadPaymentStatus() {
+      setPaymentStatusState((current) => current === "ready" ? "ready" : "loading");
+      api.paymentStatus(paymentReturn.token, paymentReturn.paymentId)
+        .then((data) => {
+          if (cancelled) return;
+          setPaymentStatus(data);
+          setPaymentStatusState("ready");
+          setPaymentStatusError("");
+          const stillPending = data.appointment_status === "PENDING_PAYMENT" || data.payment_status === "PENDING";
+          if (stillPending) retryTimer = window.setTimeout(loadPaymentStatus, 3500);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setPaymentStatusState("error");
+          setPaymentStatusError(err.message);
+        });
+    }
+
     setPaymentStatusState("loading");
-    api.paymentStatus(paymentReturn.token, paymentReturn.paymentId)
-      .then((data) => {
-        setPaymentStatus(data);
-        setPaymentStatusState("ready");
-        setPaymentStatusError("");
-      })
-      .catch((err) => {
-        setPaymentStatusState("error");
-        setPaymentStatusError(err.message);
-      });
+    loadPaymentStatus();
+    return () => {
+      cancelled = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
+    };
   }, [paymentReturn]);
 
   useEffect(() => {
@@ -865,6 +902,11 @@ export default function App() {
     window.open(finalUrl, "_blank", "noopener,noreferrer");
   }
 
+  function openPaymentWhatsAppConfirmation() {
+    if (!paymentStatus) return;
+    window.open(paymentWhatsAppUrl(paymentStatus), "_blank", "noopener,noreferrer");
+  }
+
   function closeConfirmationModal() {
     resetClient();
   }
@@ -1019,18 +1061,26 @@ export default function App() {
                 {!confirmed ? <p className="lead cancel-question">La llegada desde Mercado Pago no confirma el turno por sí sola. Estamos usando el estado real del sistema.</p> : null}
                 <Summary
                   barber={paymentStatus.barber_name}
-                  service={{ name: paymentStatus.service_name }}
+                  service={{
+                    name: paymentStatus.service_name,
+                    price: paymentStatus.service_price,
+                    duration_visible_minutes: paymentStatus.service_visible_duration_minutes,
+                  }}
                   date={paymentStatus.date}
                   time={paymentStatus.start_time}
+                  customer={`${paymentStatus.client_first_name || ""} ${paymentStatus.client_last_name || ""}`.trim()}
                 />
                 {paymentStatus.deposit_amount !== null && paymentStatus.deposit_amount !== undefined ? (
                   <div className="deposit-preview confirmed-deposit">
-                    <span>Seña: {formatPrice(paymentStatus.deposit_amount)}</span>
-                    <span>Saldo a abonar en el salón: {formatPrice(paymentStatus.remaining_balance)}</span>
-                    {paymentStatus.expires_at ? <p>Retención hasta: {new Date(paymentStatus.expires_at).toLocaleString("es-AR")}</p> : null}
+                    <span>Seña abonada: {formatPrice(paymentStatus.deposit_amount)}</span>
+                    <span>Saldo pendiente: {formatPrice(paymentStatus.remaining_balance)}</span>
+                    {pending && paymentStatus.expires_at ? <p>Retención hasta: {new Date(paymentStatus.expires_at).toLocaleString("es-AR")}</p> : null}
                   </div>
                 ) : null}
                 <div className="confirmation-actions">
+                  {confirmed ? (
+                    <button className="primary whatsapp-button" onClick={openPaymentWhatsAppConfirmation}>Enviar registro de turno por Whatsapp</button>
+                  ) : null}
                   {pending && paymentStatus.checkout_url ? (
                     <button className="primary" onClick={() => { window.location.href = paymentStatus.checkout_url; }}>Volver a Mercado Pago</button>
                   ) : null}

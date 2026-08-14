@@ -48,6 +48,9 @@ def build_payment_status(db: Session, appointment: Appointment) -> PublicPayment
     return PublicPaymentStatus(
         appointment_status=appointment.status,
         payment_status=payment.status if payment else None,
+        service_price=appointment.service_price,
+        service_visible_duration_minutes=appointment.service_visible_duration_minutes,
+        service_blocking_duration_minutes=appointment.service_blocking_duration_minutes,
         deposit_amount=appointment.deposit_amount,
         remaining_balance=appointment.remaining_balance,
         expires_at=appointment.payment_expires_at,
@@ -56,6 +59,9 @@ def build_payment_status(db: Session, appointment: Appointment) -> PublicPayment
         date=appointment.date,
         start_time=appointment.start_time,
         end_time=appointment_end_time(appointment),
+        client_first_name=appointment.client.first_name,
+        client_last_name=appointment.client.last_name,
+        client_phone=appointment.client.phone,
         checkout_url=payment.checkout_url if payment else None,
     )
 

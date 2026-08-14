@@ -91,6 +91,9 @@ class PaymentStartResponse(BaseModel):
 class PublicPaymentStatus(BaseModel):
     appointment_status: str
     payment_status: str | None = None
+    service_price: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    service_visible_duration_minutes: int | None = Field(default=None, gt=0)
+    service_blocking_duration_minutes: int = Field(gt=0)
     deposit_amount: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
     remaining_balance: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
     expires_at: datetime | None = None
@@ -99,6 +102,9 @@ class PublicPaymentStatus(BaseModel):
     date: date
     start_time: time
     end_time: time
+    client_first_name: str
+    client_last_name: str
+    client_phone: str
     checkout_url: str | None = None
 
 
