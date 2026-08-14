@@ -86,28 +86,22 @@ def log_webhook_signature_diagnostics(
     reason: str | None,
 ) -> None:
     ts, v1 = parse_signature_header(x_signature)
-    computed_matches = None
+    manual_hmac_matches = None
     if secret and v1 and ts:
         manifest = build_webhook_manifest(data_id, x_request_id, ts)
-        computed = hmac.new(secret.encode("utf-8"), manifest.encode("utf-8"), hashlib.sha256).hexdigest()
-        computed_matches = hmac.compare_digest(computed, v1)
+        manual_hmac = hmac.new(secret.encode("utf-8"), manifest.encode("utf-8"), hashlib.sha256).hexdigest()
+        manual_hmac_matches = hmac.compare_digest(manual_hmac, v1)
 
     logger.warning(
-        "MP_SIGNATURE_DIAGNOSTIC "
-        "x_request_id_present=%s x_request_id_length=%s x_request_id_sha256_12=%s "
-        "x_railway_request_id_present=%s x_railway_request_id_length=%s x_railway_request_id_sha256_12=%s "
-        "request_ids_equal=%s data_id=%s ts=%s manifest_redacted=%s hmac_matches=%s result=%s reason=%s",
-        bool(x_request_id),
+        "MP_HMAC_FINAL_DIAGNOSTIC "
+        "data_id=%s x_request_id_length=%s x_request_id_sha256_12=%s ts=%s "
+        "manifest_redacted=%s manual_hmac_matches=%s sdk_result=%s reason=%s",
+        data_id,
         len(x_request_id or ""),
         partial_sha256(x_request_id),
-        bool(x_railway_request_id),
-        len(x_railway_request_id or ""),
-        partial_sha256(x_railway_request_id),
-        x_request_id == x_railway_request_id,
-        data_id,
         ts,
         redacted_webhook_manifest(data_id, x_request_id, ts),
-        computed_matches,
+        manual_hmac_matches,
         "valid" if valid else "invalid",
         reason or "none",
     )
@@ -198,6 +192,28 @@ def get_payment(payment_id: str) -> dict:
         logger.warning("Mercado Pago rechazó la consulta del payment %s. HTTP %s", payment_id, status_code)
         raise MercadoPagoError("Mercado Pago rechazó la consulta del pago.")
     return payment
+
+
+def search_payments_by_external_reference(external_reference: str) -> list[dict]:
+    try:
+        response = sdk().payment().search(
+            {
+                "external_reference": external_reference,
+                "sort": "date_created",
+                "criteria": "desc",
+                "limit": 10,
+            }
+        )
+    except Exception as exc:
+        logger.warning("No se pudieron buscar pagos Mercado Pago por external_reference: %s", exc)
+        raise MercadoPagoError("No se pudieron buscar pagos en Mercado Pago.") from exc
+
+    status_code = response.get("status")
+    body = response.get("response") or {}
+    if status_code and int(status_code) >= 400:
+        logger.warning("Mercado Pago rechazó la búsqueda de pagos. HTTP %s", status_code)
+        raise MercadoPagoError("Mercado Pago rechazó la búsqueda de pagos.")
+    return list(body.get("results") or [])
 
 
 def validate_webhook_signature(

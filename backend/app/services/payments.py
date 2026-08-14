@@ -43,6 +43,7 @@ def appointment_by_payment_status_token(db: Session, token: str) -> Appointment:
 
 
 def build_payment_status(db: Session, appointment: Appointment) -> PublicPaymentStatus:
+    db.refresh(appointment)
     payment = latest_payment(db, appointment.id)
     return PublicPaymentStatus(
         appointment_status=appointment.status,
@@ -131,6 +132,10 @@ def payment_amount_matches(payment: Payment, mp_payment: dict) -> bool:
     return payment.currency == mp_payment.get("currency_id") and expected == amount
 
 
+def payment_external_reference(payment: Payment) -> str:
+    return f"payment:{payment.id}"
+
+
 def approved_datetime(mp_payment: dict) -> datetime:
     approved_at = mp_payment.get("date_approved")
     if approved_at:
@@ -139,6 +144,26 @@ def approved_datetime(mp_payment: dict) -> datetime:
         except ValueError:
             logger.warning("Mercado Pago devolvió date_approved inválido para payment_id=%s.", mp_payment.get("id") or "sin-id")
     return naive_now_for_db()
+
+
+def mp_payment_belongs_to_payment(payment: Payment, mp_payment: dict) -> bool:
+    external_reference = str(mp_payment.get("external_reference") or "")
+    if external_reference != payment_external_reference(payment):
+        logger.warning(
+            "Pago Mercado Pago no corresponde al pago interno esperado. expected=%s received=%s",
+            payment_external_reference(payment),
+            external_reference or "sin-referencia",
+        )
+        return False
+
+    preference_id = mp_payment.get("preference_id")
+    if preference_id and payment.external_preference_id and str(preference_id) != str(payment.external_preference_id):
+        logger.warning(
+            "Pago Mercado Pago con preference_id inconsistente para pago %s.",
+            payment.id,
+        )
+        return False
+    return True
 
 
 def payment_from_mp_payload(db: Session, mp_payment: dict) -> Payment | None:
@@ -176,6 +201,42 @@ def payment_from_mp_payload(db: Session, mp_payment: dict) -> Payment | None:
     if preference_id:
         return db.scalar(select(Payment).where(Payment.external_preference_id == str(preference_id)))
     return None
+
+
+def process_expected_mercadopago_payment(db: Session, payment: Payment, mp_payment: dict) -> Payment:
+    if not mp_payment_belongs_to_payment(payment, mp_payment):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "El pago informado no corresponde a esta reserva.")
+    return process_mercadopago_payment(db, mp_payment)
+
+
+def reconcile_payment_return(db: Session, appointment: Appointment, payment_id: str | None = None) -> Payment | None:
+    payment = latest_payment(db, appointment.id)
+    if not payment:
+        return None
+    if payment.status == PAYMENT_STATUS_APPROVED:
+        return payment
+    if appointment.status not in (STATUS_PENDING_PAYMENT, STATUS_EXPIRED):
+        return payment
+
+    mp_payments = []
+    if payment_id:
+        try:
+            mp_payments.append(mercadopago.get_payment(payment_id))
+        except mercadopago.MercadoPagoError as exc:
+            logger.warning("No se pudo reconciliar payment_id=%s: %s", payment_id, exc)
+            return payment
+    else:
+        try:
+            mp_payments.extend(mercadopago.search_payments_by_external_reference(payment_external_reference(payment)))
+        except mercadopago.MercadoPagoError as exc:
+            logger.warning("No se pudo reconciliar por external_reference para pago %s: %s", payment.id, exc)
+            return payment
+
+    for mp_payment in mp_payments:
+        if not mp_payment_belongs_to_payment(payment, mp_payment):
+            continue
+        return process_mercadopago_payment(db, mp_payment)
+    return payment
 
 
 def process_mercadopago_payment(db: Session, mp_payment: dict) -> Payment:

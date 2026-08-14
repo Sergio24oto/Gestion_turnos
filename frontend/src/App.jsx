@@ -157,10 +157,12 @@ function cancellationTokenFromPath() {
 
 function paymentReturnFromPath() {
   const match = window.location.pathname.match(/^\/pago\/(exito|pendiente|error)\/?$/);
+  const params = new URLSearchParams(window.location.search);
   if (!match) return null;
   return {
     result: match[1],
-    token: new URLSearchParams(window.location.search).get("token") || "",
+    token: params.get("token") || "",
+    paymentId: params.get("payment_id") || params.get("collection_id") || "",
   };
 }
 
@@ -414,7 +416,7 @@ export default function App() {
   useEffect(() => {
     if (!paymentReturn?.token) return;
     setPaymentStatusState("loading");
-    api.paymentStatus(paymentReturn.token)
+    api.paymentStatus(paymentReturn.token, paymentReturn.paymentId)
       .then((data) => {
         setPaymentStatus(data);
         setPaymentStatusState("ready");
