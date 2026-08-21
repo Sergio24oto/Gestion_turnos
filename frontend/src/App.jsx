@@ -806,7 +806,7 @@ export default function App() {
         client: {
           first_name: manual.first_name,
           last_name: manual.last_name || "Sin apellido",
-          phone: manual.phone || "Sin telefono",
+          phone: manual.phone.trim(),
         },
       });
       setManual(null);

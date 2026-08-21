@@ -27,6 +27,19 @@ class ClientInput(BaseModel):
         return normalize_phone(value)
 
 
+class ManualClientInput(BaseModel):
+    first_name: str = Field(min_length=1, max_length=80)
+    last_name: str = Field(min_length=1, max_length=80)
+    phone: str = Field(default="", max_length=40)
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_optional_phone_value(cls, value: str | None) -> str:
+        if value is None or str(value).strip() == "":
+            return ""
+        return normalize_phone(value)
+
+
 class AppointmentCreate(BaseModel):
     service_id: int
     barber_id: int | None = None
@@ -36,7 +49,7 @@ class AppointmentCreate(BaseModel):
 
 
 class ManualAppointmentCreate(AppointmentCreate):
-    pass
+    client: ManualClientInput
 
 
 class AppointmentRead(BaseModel):
