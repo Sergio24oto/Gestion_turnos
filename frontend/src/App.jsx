@@ -8,6 +8,7 @@ const ANY_BARBER = "any";
 const ALL_BARBERS = "all";
 const BUSINESS_NAME = "Marcelo Navarro";
 const RESERVATION_STEPS = ["barber", "service", "date", "time", "details"];
+const ADMIN_ALERT_INTERVAL_MS = 30000;
 const SERVICE_FILTERS = {
   active: "Activos",
   inactive: "Inactivos",
@@ -253,6 +254,18 @@ function appointmentServiceLabel(appointment) {
   return `${appointment.service_name} · ${formatPrice(appointment.service_price)} · Duración: ${formatDuration(appointment.service_visible_duration_minutes)} · Ocupa: ${formatDuration(appointment.service_blocking_duration_minutes)}${deposit}${payment}`;
 }
 
+function appointmentAlertText(slot) {
+  if (!slot?.appointment) return null;
+  const appointment = slot.appointment;
+  const clientName = `${appointment.client_first_name || ""} ${appointment.client_last_name || ""}`.trim() || "Cliente";
+  const serviceName = appointment.service_name || "Servicio";
+  const barberName = displayBarberName(appointment.barber_name || slot.barber_name || "");
+  return {
+    title: "Nuevo turno registrado",
+    body: `${timeLabel(slot.time)} · ${clientName} · ${serviceName}${barberName ? ` con ${barberName}` : ""}`,
+  };
+}
+
 function pluralize(value, singular, plural) {
   return `${value} ${value === 1 ? singular : plural}`;
 }
@@ -331,6 +344,14 @@ export default function App() {
   const [adminDate, setAdminDate] = useState(firstOpenDate());
   const [adminBarberTab, setAdminBarberTab] = useState(null);
   const [agenda, setAgenda] = useState([]);
+  const [adminAlertsEnabled, setAdminAlertsEnabled] = useState(false);
+  const [adminNotificationPermission, setAdminNotificationPermission] = useState(
+    typeof Notification === "undefined" ? "unsupported" : Notification.permission
+  );
+  const [adminAlertNotice, setAdminAlertNotice] = useState("");
+  const knownAppointmentIdsRef = useRef(new Set());
+  const agendaSnapshotReadyRef = useRef(false);
+  const audioContextRef = useRef(null);
   const [manual, setManual] = useState(null);
   const [manualServices, setManualServices] = useState([]);
   const [adminServices, setAdminServices] = useState([]);
@@ -495,8 +516,18 @@ export default function App() {
   }, [step, date, barberId, serviceId, availabilityKey, availabilityRetry]);
 
   useEffect(() => {
+    agendaSnapshotReadyRef.current = false;
+    knownAppointmentIdsRef.current = new Set();
     if (view === "admin" && token) refreshAgenda();
   }, [view, token, adminDate]);
+
+  useEffect(() => {
+    if (view !== "admin" || !token || adminSection !== "agenda") return undefined;
+    const intervalId = window.setInterval(() => {
+      refreshAgenda({ detectAlerts: true });
+    }, ADMIN_ALERT_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [view, token, adminSection, adminDate, adminAlertsEnabled]);
 
   useEffect(() => {
     if (view === "admin" && token && adminSection === "services") loadAdminServices();
@@ -543,13 +574,73 @@ export default function App() {
     blocked: visibleAgenda.filter((slot) => slot.status === "Bloqueado").length,
   }), [visibleAgenda]);
 
-  async function refreshAgenda() {
+  function normalizeAgendaSlots(slots) {
+    return slots.map((slot) => ({
+      ...slot,
+      barber_name: displayBarberName(slot.barber_name),
+      appointment: slot.appointment ? { ...slot.appointment, barber_name: displayBarberName(slot.appointment.barber_name) } : slot.appointment,
+    }));
+  }
+
+  function playAdminAlertSound() {
     try {
-      setAgenda((await api.agenda(adminDate)).map((slot) => ({
-        ...slot,
-        barber_name: displayBarberName(slot.barber_name),
-        appointment: slot.appointment ? { ...slot.appointment, barber_name: displayBarberName(slot.appointment.barber_name) } : slot.appointment,
-      })));
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      const context = audioContextRef.current || new AudioContext();
+      audioContextRef.current = context;
+      if (context.state === "suspended") context.resume();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, context.currentTime);
+      oscillator.frequency.setValueAtTime(660, context.currentTime + 0.12);
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.16, context.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.34);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + 0.36);
+    } catch {
+      // El sonido es una mejora; si el navegador lo bloquea, las notificaciones siguen funcionando.
+    }
+  }
+
+  function notifyNewAppointment(slot) {
+    const message = appointmentAlertText(slot);
+    if (!message) return;
+    setAdminAlertNotice(`${message.title}: ${message.body}`);
+    window.setTimeout(() => setAdminAlertNotice(""), 8000);
+    playAdminAlertSound();
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      new Notification(message.title, {
+        body: message.body,
+        icon: "/marcelo-navarro-logo.png",
+        badge: "/marcelo-navarro-logo.png",
+      });
+    }
+  }
+
+  function trackAgendaAppointments(nextAgenda, shouldNotify = false) {
+    const nextIds = new Set(nextAgenda.filter((slot) => slot.appointment).map((slot) => Number(slot.appointment.id)));
+    if (!agendaSnapshotReadyRef.current) {
+      knownAppointmentIdsRef.current = nextIds;
+      agendaSnapshotReadyRef.current = true;
+      return;
+    }
+    if (shouldNotify && adminAlertsEnabled) {
+      nextAgenda
+        .filter((slot) => slot.appointment && !knownAppointmentIdsRef.current.has(Number(slot.appointment.id)))
+        .forEach(notifyNewAppointment);
+    }
+    knownAppointmentIdsRef.current = nextIds;
+  }
+
+  async function refreshAgenda({ detectAlerts = false } = {}) {
+    try {
+      const nextAgenda = normalizeAgendaSlots(await api.agenda(adminDate));
+      trackAgendaAppointments(nextAgenda, detectAlerts);
+      setAgenda(nextAgenda);
     } catch (err) {
       setError(err.message);
     }
@@ -575,6 +666,27 @@ export default function App() {
   function showCopyFeedback(message) {
     setCopyMessage(message);
     window.setTimeout(() => setCopyMessage(""), 2500);
+  }
+
+  async function enableAdminAlerts() {
+    setError("");
+    playAdminAlertSound();
+    let permission = typeof Notification === "undefined" ? "unsupported" : Notification.permission;
+    if (permission === "default") {
+      permission = await Notification.requestPermission();
+    }
+    setAdminNotificationPermission(permission);
+    setAdminAlertsEnabled(true);
+    knownAppointmentIdsRef.current = new Set(agenda.filter((slot) => slot.appointment).map((slot) => Number(slot.appointment.id)));
+    agendaSnapshotReadyRef.current = true;
+    if (permission === "granted") {
+      setAdminAlertNotice("Alertas activadas. Te vamos a avisar cuando entre un turno nuevo.");
+    } else if (permission === "denied") {
+      setAdminAlertNotice("Sonido activado. Las notificaciones del navegador están bloqueadas.");
+    } else {
+      setAdminAlertNotice("Sonido activado. Este navegador no permite notificaciones.");
+    }
+    window.setTimeout(() => setAdminAlertNotice(""), 8000);
   }
 
   function openNewServiceForm() {
@@ -1290,6 +1402,15 @@ export default function App() {
                   {adminSection === "barberServices" ? <p className="admin-subtitle">Definí qué ofrece cada profesional, con precio y duración propios.</p> : null}
                 </div>
                 <div className="toolbar-actions">
+                  {adminSection === "agenda" ? (
+                    <button
+                      className={`alert-toggle ${adminAlertsEnabled ? "active" : ""}`}
+                      type="button"
+                      onClick={enableAdminAlerts}
+                    >
+                      {adminAlertsEnabled ? "Alertas activadas" : "Activar alertas"}
+                    </button>
+                  ) : null}
                   {adminSection === "agenda" ? <input type="date" value={adminDate} onChange={(e) => setAdminDate(e.target.value)} /> : null}
                   <button className="ghost" onClick={() => { localStorage.removeItem("adminToken"); setToken(""); }}>Salir</button>
                 </div>
@@ -1302,6 +1423,20 @@ export default function App() {
 
               {adminSection === "agenda" ? (
                 <>
+                  <div className={`admin-alert-card ${adminAlertsEnabled ? "active" : ""}`} role="status">
+                    <div>
+                      <strong>{adminAlertsEnabled ? "Alertas listas" : "Alertas de nuevos turnos"}</strong>
+                      <span>
+                        {adminAlertsEnabled
+                          ? adminNotificationPermission === "granted"
+                            ? "Sonido y notificaciones del navegador activadas mientras esta pantalla esté abierta."
+                            : "Sonido activado. Permití las notificaciones del navegador si querés ver avisos fuera de la pestaña."
+                          : "Activá sonido y notificaciones para recibir avisos cuando ingrese un turno nuevo."}
+                      </span>
+                    </div>
+                    {!adminAlertsEnabled ? <button className="primary" type="button" onClick={enableAdminAlerts}>Activar alertas</button> : null}
+                  </div>
+                  {adminAlertNotice ? <div className="admin-alert-notice" role="status">{adminAlertNotice}</div> : null}
                   <div className="stats">
                     <span><strong>{stats.free}</strong> libres</span>
                     <span><strong>{stats.booked}</strong> reservados</span>
