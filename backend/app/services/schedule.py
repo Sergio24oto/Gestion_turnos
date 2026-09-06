@@ -29,7 +29,7 @@ from ..models.service import Service
 from ..schemas.appointment import AgendaSlot, AppointmentCreate, AppointmentRead, PublicCancellationAppointment
 from ..schemas.block import BlockCreate
 
-OPEN_RANGES = ((time(9, 0), time(13, 0)), (time(17, 0), time(21, 0)))
+OPEN_RANGES = ((time(9, 0), time(13, 0)), (time(17, 0), time(22, 0)))
 MIN_BOOKING_NOTICE_MINUTES = 20
 try:
     ARGENTINA_TZ = ZoneInfo("America/Argentina/Cordoba")
