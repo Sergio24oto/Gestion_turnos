@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routes import admin_barber_services, admin_services, appointments, auth, availability, barbers, blocks, payments, services, webhooks
+from .routes import admin_barber_services, admin_sales, admin_services, appointments, auth, availability, barbers, blocks, payments, services, webhooks
 from .seed import seed_initial_data
 
 app = FastAPI(title="API Turnos Peluqueria", version="1.0.0")
@@ -20,6 +20,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(services.router, prefix="/api")
 app.include_router(admin_services.router, prefix="/api")
 app.include_router(admin_barber_services.router, prefix="/api")
+app.include_router(admin_sales.router, prefix="/api")
 app.include_router(barbers.router, prefix="/api")
 app.include_router(availability.router, prefix="/api")
 app.include_router(appointments.router, prefix="/api")

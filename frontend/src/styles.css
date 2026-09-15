@@ -724,6 +724,137 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
   color: #F1ECE6;
   font-weight: 800;
 }
+.sales-admin {
+  display: grid;
+  gap: 18px;
+}
+.sales-overview,
+.sales-barber-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.sales-barber-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.sales-total-card,
+.sales-barber-card,
+.sales-detail {
+  border: 1px solid rgba(198, 163, 106, .18);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(198, 163, 106, .10), transparent 38%),
+    rgba(30, 26, 23, .78);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, .18);
+}
+.sales-total-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+}
+.sales-total-card span,
+.sales-barber-card span,
+.sales-total-card small,
+.sales-barber-card p,
+.sales-detail-head span {
+  color: #B89F82;
+}
+.sales-total-card strong {
+  color: #F5EBDD;
+  font-size: clamp(24px, 4vw, 36px);
+  font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+  font-weight: 600;
+}
+.sales-total-card small {
+  line-height: 1.4;
+  font-weight: 800;
+}
+.sales-barber-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+.sales-barber-card > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+.sales-barber-card strong,
+.sales-detail-head strong,
+.sale-row strong {
+  color: #F5EBDD;
+}
+.sales-barber-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.sales-barber-card dl div,
+.sale-row-meta span {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid rgba(198, 163, 106, .14);
+  border-radius: 14px;
+  background: rgba(17, 17, 17, .24);
+}
+.sales-barber-card dt {
+  color: #B89F82;
+  font-size: 12px;
+  font-weight: 900;
+}
+.sales-barber-card dd {
+  margin: 0;
+  color: #F1ECE6;
+  font-weight: 900;
+}
+.sales-barber-card p {
+  margin: 0;
+  font-weight: 800;
+}
+.sales-detail {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+.sales-detail-head,
+.sale-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(190px, auto) auto;
+  gap: 12px;
+  align-items: center;
+}
+.sales-list {
+  display: grid;
+  gap: 8px;
+}
+.sale-row {
+  padding: 12px;
+  border: 1px solid rgba(198, 163, 106, .14);
+  border-radius: 14px;
+  background: rgba(17, 17, 17, .22);
+}
+.sale-row > div:first-child {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.sale-row span {
+  color: #B89F82;
+}
+.sale-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.sale-row-meta span {
+  color: #E6D7C6;
+  font-weight: 900;
+  white-space: nowrap;
+}
 .admin-tabs {
   border-bottom: 1px solid rgba(198, 163, 106, .12);
 }
@@ -971,6 +1102,19 @@ select:focus-visible {
   }
   .admin-alert-card button,
   .admin-panel .alert-toggle {
+    width: 100%;
+  }
+  .sales-overview,
+  .sales-barber-grid,
+  .sales-detail-head,
+  .sale-row {
+    grid-template-columns: 1fr;
+  }
+  .sale-row-meta {
+    justify-content: stretch;
+  }
+  .sale-row-meta span,
+  .sale-row button {
     width: 100%;
   }
 }

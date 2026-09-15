@@ -11,6 +11,9 @@ STATUS_CONFIRMED = "CONFIRMED"
 STATUS_CANCELLED = "CANCELLED"
 STATUS_EXPIRED = "EXPIRED"
 STATUS_COMPLETED = "COMPLETED"
+PAYMENT_METHOD_UNREGISTERED = "SIN_REGISTRAR"
+PAYMENT_METHOD_CASH = "EFECTIVO"
+PAYMENT_METHOD_TRANSFER = "TRANSFERENCIA"
 LEGACY_STATUS_CONFIRMED = "Confirmado"
 LEGACY_STATUS_CANCELLED = "Cancelado"
 LEGACY_STATUS_COMPLETED = "Completado"
@@ -39,6 +42,11 @@ class Appointment(Base):
         ),
         CheckConstraint("monto_senia IS NULL OR monto_senia >= 0", name="ck_turnos_monto_senia_no_negativo"),
         CheckConstraint("saldo_pendiente IS NULL OR saldo_pendiente >= 0", name="ck_turnos_saldo_pendiente_no_negativo"),
+        CheckConstraint("venta_monto IS NULL OR venta_monto >= 0", name="ck_turnos_venta_monto_no_negativo"),
+        CheckConstraint(
+            "metodo_pago IN ('SIN_REGISTRAR', 'EFECTIVO', 'TRANSFERENCIA')",
+            name="ck_turnos_metodo_pago_valido",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -99,6 +107,9 @@ class Appointment(Base):
     deposit_amount: Mapped[Decimal] = mapped_column("monto_senia", Numeric(10, 2), nullable=True)
     remaining_balance: Mapped[Decimal] = mapped_column("saldo_pendiente", Numeric(10, 2), nullable=True)
     payment_expires_at: Mapped[datetime] = mapped_column("payment_expires_at", DateTime, nullable=True)
+    sale_amount: Mapped[Decimal] = mapped_column("venta_monto", Numeric(10, 2), nullable=True)
+    payment_method: Mapped[str] = mapped_column("metodo_pago", String(20), nullable=False, default=PAYMENT_METHOD_UNREGISTERED)
+    sale_updated_at: Mapped[datetime] = mapped_column("venta_actualizada_en", DateTime, nullable=True)
     no_show: Mapped[bool] = mapped_column("no_show", Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column("creado_en", DateTime, server_default=func.now(), nullable=False)
     active_date: Mapped[date] = mapped_column(

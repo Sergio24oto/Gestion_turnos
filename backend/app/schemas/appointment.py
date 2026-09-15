@@ -70,6 +70,9 @@ class AppointmentRead(BaseModel):
     remaining_balance: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
     payment_expires_at: datetime | None = None
     payment_status: str | None = None
+    sale_amount: Optional[Decimal] = Field(default=None, ge=Decimal("0"), max_digits=10, decimal_places=2)
+    payment_method: str
+    sale_updated_at: datetime | None = None
     client_id: int
     client_first_name: str
     client_last_name: str

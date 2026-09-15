@@ -31,6 +31,8 @@ export const api = {
   createAdminService: (payload) => request("/admin/services", { method: "POST", body: JSON.stringify(payload) }),
   updateAdminService: (id, payload) => request(`/admin/services/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   updateAdminServiceStatus: (id, payload) => request(`/admin/services/${id}/status`, { method: "PATCH", body: JSON.stringify(payload) }),
+  adminSales: (date) => request(`/admin/sales?date_=${date}`),
+  updateAppointmentSale: (appointmentId, payload) => request(`/admin/sales/appointments/${appointmentId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   adminBarberServices: (barberId) => request(`/admin/barbers/${barberId}/services`),
   assignBarberService: (barberId, payload) => request(`/admin/barbers/${barberId}/services`, { method: "POST", body: JSON.stringify(payload) }),
   updateBarberService: (barberId, serviceId, payload) => request(`/admin/barbers/${barberId}/services/${serviceId}`, { method: "PATCH", body: JSON.stringify(payload) }),

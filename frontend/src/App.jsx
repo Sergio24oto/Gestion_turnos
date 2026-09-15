@@ -14,6 +14,11 @@ const SERVICE_FILTERS = {
   inactive: "Inactivos",
   all: "Todos",
 };
+const PAYMENT_METHODS = {
+  SIN_REGISTRAR: "Sin registrar",
+  EFECTIVO: "Efectivo",
+  TRANSFERENCIA: "Transferencia",
+};
 
 function todayISO() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
@@ -46,6 +51,10 @@ function formatPrice(value) {
   if (value === null || value === undefined) return "A consultar";
   const amount = Number(value || 0);
   return `$ ${new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(amount)}`;
+}
+
+function formatSalePrice(value) {
+  return value === null || value === undefined ? "Precio pendiente" : formatPrice(value);
 }
 
 function formatServicePrice(service) {
@@ -355,6 +364,12 @@ export default function App() {
   const [manual, setManual] = useState(null);
   const [manualServices, setManualServices] = useState([]);
   const [adminServices, setAdminServices] = useState([]);
+  const [sales, setSales] = useState(null);
+  const [salesDate, setSalesDate] = useState(todayISO());
+  const [salesLoading, setSalesLoading] = useState(false);
+  const [salesMessage, setSalesMessage] = useState("");
+  const [saleForm, setSaleForm] = useState(null);
+  const [saleSaving, setSaleSaving] = useState(false);
   const [serviceSearch, setServiceSearch] = useState("");
   const [serviceFilter, setServiceFilter] = useState("active");
   const [serviceForm, setServiceForm] = useState(null);
@@ -534,6 +549,10 @@ export default function App() {
   }, [view, token, adminSection]);
 
   useEffect(() => {
+    if (view === "admin" && token && adminSection === "sales") loadSales();
+  }, [view, token, adminSection, salesDate]);
+
+  useEffect(() => {
     if (view === "admin" && token && adminSection === "barberServices" && !configBarberId && barbers.length) {
       setConfigBarberId(String(barbers[0].id));
     }
@@ -651,6 +670,49 @@ export default function App() {
       setAdminServices(await api.adminServices());
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function loadSales() {
+    setSalesLoading(true);
+    try {
+      setSales(await api.adminSales(salesDate));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSalesLoading(false);
+    }
+  }
+
+  function openSaleForm(appointment) {
+    setSalesMessage("");
+    setSaleForm({
+      appointment_id: appointment.appointment_id,
+      client_name: appointment.client_name,
+      service_name: appointment.service_name,
+      barber_name: appointment.barber_name,
+      sale_amount: appointment.sale_amount ?? "",
+      payment_method: appointment.payment_method || "SIN_REGISTRAR",
+    });
+  }
+
+  async function submitSaleForm(event) {
+    event.preventDefault();
+    if (!saleForm) return;
+    setSaleSaving(true);
+    setError("");
+    try {
+      await api.updateAppointmentSale(saleForm.appointment_id, {
+        sale_amount: saleForm.sale_amount === "" ? null : Number(saleForm.sale_amount),
+        payment_method: saleForm.payment_method,
+      });
+      setSaleForm(null);
+      setSalesMessage("Venta actualizada correctamente.");
+      await loadSales();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaleSaving(false);
     }
   }
 
@@ -1397,9 +1459,11 @@ export default function App() {
                     {adminSection === "agenda" ? `Agenda - ${formatDate(adminDate)}` : null}
                     {adminSection === "services" ? "Servicios" : null}
                     {adminSection === "barberServices" ? "Profesionales y servicios" : null}
+                    {adminSection === "sales" ? "Ventas" : null}
                   </h2>
                   {adminSection === "services" ? <p className="admin-subtitle">Gestioná el catálogo de servicios del salón.</p> : null}
                   {adminSection === "barberServices" ? <p className="admin-subtitle">Definí qué ofrece cada profesional, con precio y duración propios.</p> : null}
+                  {adminSection === "sales" ? <p className="admin-subtitle">Controlá la recaudación diaria y semanal por profesional.</p> : null}
                 </div>
                 <div className="toolbar-actions">
                   {adminSection === "agenda" ? (
@@ -1412,6 +1476,7 @@ export default function App() {
                     </button>
                   ) : null}
                   {adminSection === "agenda" ? <input type="date" value={adminDate} onChange={(e) => setAdminDate(e.target.value)} /> : null}
+                  {adminSection === "sales" ? <input type="date" value={salesDate} onChange={(e) => setSalesDate(e.target.value)} /> : null}
                   <button className="ghost" onClick={() => { localStorage.removeItem("adminToken"); setToken(""); }}>Salir</button>
                 </div>
               </div>
@@ -1419,6 +1484,7 @@ export default function App() {
                 <button className={`admin-section-tab ${adminSection === "agenda" ? "active" : ""}`} onClick={() => setAdminSection("agenda")}>Agenda</button>
                 <button className={`admin-section-tab ${adminSection === "services" ? "active" : ""}`} onClick={() => setAdminSection("services")}>Servicios</button>
                 <button className={`admin-section-tab ${adminSection === "barberServices" ? "active" : ""}`} onClick={() => setAdminSection("barberServices")}>Profesionales y servicios</button>
+                <button className={`admin-section-tab ${adminSection === "sales" ? "active" : ""}`} onClick={() => setAdminSection("sales")}>Ventas</button>
               </div>
 
               {adminSection === "agenda" ? (
@@ -1473,6 +1539,89 @@ export default function App() {
                     </div>
                   )}
                 </>
+              ) : adminSection === "sales" ? (
+                <div className="sales-admin">
+                  {salesMessage ? (
+                    <div className="admin-success" role="status">
+                      <span>{salesMessage}</span>
+                      <button type="button" onClick={() => setSalesMessage("")} aria-label="Cerrar mensaje">×</button>
+                    </div>
+                  ) : null}
+                  {salesLoading ? <div className="services-empty compact-empty"><span>Cargando ventas...</span></div> : null}
+                  {sales ? (
+                    <>
+                      <div className="sales-overview">
+                        <article className="sales-total-card">
+                          <span>Total del día</span>
+                          <strong>{formatPrice(sales.daily_total)}</strong>
+                          <small>{formatDate(sales.date)} · {sales.pending_amount_count} con precio pendiente</small>
+                        </article>
+                        <article className="sales-total-card">
+                          <span>Semana actual</span>
+                          <strong>{formatPrice(sales.weekly_total)}</strong>
+                          <small>{formatDate(sales.week_start, false)} al {formatDate(sales.week_end, false)}</small>
+                        </article>
+                        <article className="sales-total-card">
+                          <span>Efectivo</span>
+                          <strong>{formatPrice(sales.cash_total)}</strong>
+                          <small>Marcado por el administrador</small>
+                        </article>
+                        <article className="sales-total-card">
+                          <span>Transferencia</span>
+                          <strong>{formatPrice(sales.transfer_total)}</strong>
+                          <small>Marcado por el administrador</small>
+                        </article>
+                      </div>
+                      <div className="sales-barber-grid">
+                        {sales.barbers.map((barber) => (
+                          <article key={barber.barber_id} className="sales-barber-card">
+                            <div>
+                              <strong>{displayBarberName(barber.barber_name)}</strong>
+                              <span>{pluralize(barber.appointments_count, "turno", "turnos")}</span>
+                            </div>
+                            <dl>
+                              <div><dt>Total</dt><dd>{formatPrice(barber.total_sold)}</dd></div>
+                              <div><dt>Efectivo</dt><dd>{formatPrice(barber.cash_total)}</dd></div>
+                              <div><dt>Transferencia</dt><dd>{formatPrice(barber.transfer_total)}</dd></div>
+                              <div><dt>Sin registrar</dt><dd>{formatPrice(barber.unregistered_total)}</dd></div>
+                            </dl>
+                            {barber.pending_amount_count ? <p>{barber.pending_amount_count} venta con precio pendiente.</p> : null}
+                          </article>
+                        ))}
+                      </div>
+                      <div className="sales-detail">
+                        <div className="sales-detail-head">
+                          <div>
+                            <p className="eyebrow">Detalle de ventas</p>
+                            <strong>{pluralize(sales.appointments.length, "turno registrado", "turnos registrados")}</strong>
+                          </div>
+                          <span>Sin registrar: {formatPrice(sales.unregistered_total)}</span>
+                        </div>
+                        <div className="sales-list">
+                          {sales.appointments.map((appointment) => (
+                            <article key={appointment.appointment_id} className="sale-row">
+                              <div>
+                                <strong>{timeLabel(appointment.start_time)} · {appointment.client_name}</strong>
+                                <span>{displayBarberName(appointment.barber_name)} · {appointment.service_name}</span>
+                              </div>
+                              <div className="sale-row-meta">
+                                <span>{formatSalePrice(appointment.sale_amount)}</span>
+                                <span>{PAYMENT_METHODS[appointment.payment_method] || appointment.payment_method}</span>
+                              </div>
+                              <button className="edit-action" type="button" onClick={() => openSaleForm(appointment)}>Editar venta</button>
+                            </article>
+                          ))}
+                          {!sales.appointments.length ? (
+                            <div className="services-empty">
+                              <strong>No hay ventas para esta fecha.</strong>
+                              <span>Cuando haya turnos confirmados, van a aparecer en este detalle.</span>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
               ) : adminSection === "services" ? (
                 <div className="services-admin">
                   {serviceMessage ? (
@@ -1804,6 +1953,38 @@ export default function App() {
               <button className="primary" type="button" disabled={barberServiceSaving} onClick={confirmBarberServiceStatusChange}>{barberServiceSaving ? "Guardando..." : barberServiceConfirm.active ? "Desactivar" : "Reactivar"}</button>
             </menu>
           </section>
+        </div>
+      ) : null}
+
+      {saleForm ? (
+        <div className="modal-layer">
+          <form className="dialog-card service-dialog" onSubmit={submitSaleForm}>
+            <div>
+              <p className="eyebrow">Editar venta</p>
+              <h3>{saleForm.service_name}</h3>
+              <p>{saleForm.client_name} · {displayBarberName(saleForm.barber_name)}</p>
+            </div>
+            <label>Monto cobrado
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={saleForm.sale_amount}
+                onChange={(e) => setSaleForm({ ...saleForm, sale_amount: e.target.value })}
+                placeholder="Ej: 18000"
+              />
+              <span className="field-help">Dejalo vacío si el precio todavía está pendiente.</span>
+            </label>
+            <label>Método de pago
+              <select value={saleForm.payment_method} onChange={(e) => setSaleForm({ ...saleForm, payment_method: e.target.value })}>
+                {Object.entries(PAYMENT_METHODS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
+            <menu>
+              <button type="button" className="ghost" disabled={saleSaving} onClick={() => setSaleForm(null)}>Cancelar</button>
+              <button className="primary" type="submit" disabled={saleSaving}>{saleSaving ? "Guardando..." : "Guardar venta"}</button>
+            </menu>
+          </form>
         </div>
       ) : null}
 
