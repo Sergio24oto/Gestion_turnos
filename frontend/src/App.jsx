@@ -7,6 +7,8 @@ const MIN_BOOKING_NOTICE_MINUTES = 20;
 const ANY_BARBER = "any";
 const ALL_BARBERS = "all";
 const BUSINESS_NAME = "Marcelo Navarro";
+const MARCELO_NAVARRO_NAME = "Marcelo Navarro";
+const MARCELO_TUESDAY_LOCATION = "Fontana";
 const RESERVATION_STEPS = ["barber", "service", "date", "time", "details"];
 const ADMIN_ALERT_INTERVAL_MS = 30000;
 const SERVICE_FILTERS = {
@@ -41,6 +43,18 @@ function formatDate(iso, weekday = true) {
 function isOpenDay(iso) {
   const day = parseLocalDate(iso).getDay();
   return day >= 2 && day <= 6;
+}
+
+function isTuesday(iso) {
+  return Boolean(iso) && parseLocalDate(iso).getDay() === 2;
+}
+
+function isMarceloNavarro(name) {
+  return String(name || "").trim().toLowerCase() === MARCELO_NAVARRO_NAME.toLowerCase();
+}
+
+function shouldShowFontanaNotice(barberName, iso) {
+  return isMarceloNavarro(barberName) && isTuesday(iso);
 }
 
 function timeLabel(value) {
@@ -134,6 +148,7 @@ function bookingCancellationLink(booking) {
 
 function whatsappMessage(booking) {
   const link = bookingCancellationLink(booking);
+  const showFontanaNotice = shouldShowFontanaNotice(booking.barber_name, booking.date);
   return [
     `Hola ${booking.client_first_name}.`,
     "",
@@ -147,6 +162,7 @@ function whatsappMessage(booking) {
     `Duración: ${formatDuration(booking.service_visible_duration_minutes)}`,
     `Fecha: ${formatDate(booking.date)}`,
     `Hora: ${timeLabel(booking.start_time)}`,
+    showFontanaNotice ? `Ubicación: ${MARCELO_TUESDAY_LOCATION}` : null,
     "",
     "Para cancelar tu turno:",
     link,
@@ -161,6 +177,7 @@ function whatsappUrl(booking) {
 }
 
 function paymentWhatsAppMessage(payment) {
+  const showFontanaNotice = shouldShowFontanaNotice(payment.barber_name, payment.date);
   return [
     "Turno confirmado",
     "",
@@ -172,6 +189,7 @@ function paymentWhatsAppMessage(payment) {
     `Fecha: ${formatDate(payment.date)}`,
     `Hora: ${timeLabel(payment.start_time)}`,
     `Duración: ${formatDuration(payment.service_visible_duration_minutes)}`,
+    showFontanaNotice ? `Ubicación: ${MARCELO_TUESDAY_LOCATION}` : null,
   ].filter((line) => line !== null).join("\n");
 }
 
@@ -312,6 +330,7 @@ function BarberLabel({ barber, name }) {
 
 function Summary({ barber, service, date, time, customer, phone }) {
   const barberName = barber ? displayBarberName(barber) : "";
+  const showFontanaNotice = shouldShowFontanaNotice(barberName, date);
   return (
     <div className="summary">
       {barber ? <div><span>Peluquero</span><strong><BarberLabel name={barberName} /></strong></div> : null}
@@ -320,8 +339,19 @@ function Summary({ barber, service, date, time, customer, phone }) {
       <div><span>Duración</span><strong>{formatServiceDuration(service)}</strong></div>
       <div><span>Fecha</span><strong>{date ? formatDate(date) : "-"}</strong></div>
       <div><span>Hora</span><strong>{time ? timeLabel(time) : "-"}</strong></div>
+      {showFontanaNotice ? <div><span>Ubicación</span><strong>{MARCELO_TUESDAY_LOCATION}</strong></div> : null}
       {customer ? <div><span>Cliente</span><strong>{customer}</strong></div> : null}
       {phone ? <div><span>Teléfono</span><strong>{phone}</strong></div> : null}
+    </div>
+  );
+}
+
+function FontanaNotice({ barber, date }) {
+  if (!shouldShowFontanaNotice(barber, date)) return null;
+  return (
+    <div className="location-notice" role="note">
+      <strong>Marcelo atiende en Fontana los martes.</strong>
+      <span>Tené en cuenta esta ubicación antes de confirmar tu turno.</span>
     </div>
   );
 }
@@ -1394,6 +1424,7 @@ export default function App() {
                 <div><p className="eyebrow">TURNOS DISPONIBLES</p><h2>{formatDate(date)}</h2><p>Peluquero: <strong>{currentBarberName}</strong></p></div>
                 <button className="ghost" onClick={goBackToDate}>← Volver</button>
               </div>
+              <FontanaNotice barber={currentBarberName} date={date} />
               {loadingAvailability ? (
                 <p className="availability-state">Cargando horarios...</p>
               ) : availabilityError ? (
@@ -1419,6 +1450,7 @@ export default function App() {
                   <input required inputMode="tel" placeholder="Ej: 3575406316" value={client.phone} aria-invalid={Boolean(phoneError)} onChange={(e) => setClient({ ...client, phone: e.target.value })} />
                   <span className={phoneError ? "field-error" : "field-help"}>{phoneError || "Ingresá código de área y número."}</span>
                 </label>
+                <FontanaNotice barber={currentBarberName} date={date} />
                 <Summary barber={currentBarberName} service={selectedService} date={date} time={time} customer={`${client.first_name} ${client.last_name}`.trim()} />
                 {selectedService?.requires_deposit ? (
                   <div className="deposit-preview">
