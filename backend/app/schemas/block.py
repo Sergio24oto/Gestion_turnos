@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class BlockCreate(BaseModel):
     date: date
     start_time: time
+    barber_id: int
     reason: str | None = None
 
 
@@ -13,4 +14,5 @@ class BlockRead(BaseModel):
     id: int
     date: date
     start_time: time
+    barber_id: int
     reason: str | None = None

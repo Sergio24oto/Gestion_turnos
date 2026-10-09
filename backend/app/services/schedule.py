@@ -327,8 +327,14 @@ def overlapping_appointment_at_slot(db: Session, slot_date: date, slot_time: tim
     )
 
 
-def occupied_block(db: Session, slot_date: date, slot_time: time) -> BlockedSlot | None:
-    return db.scalar(select(BlockedSlot).where(BlockedSlot.date == slot_date, BlockedSlot.start_time == slot_time))
+def occupied_block(db: Session, slot_date: date, slot_time: time, barber_id: int) -> BlockedSlot | None:
+    return db.scalar(
+        select(BlockedSlot).where(
+            BlockedSlot.date == slot_date,
+            BlockedSlot.start_time == slot_time,
+            BlockedSlot.barber_id == barber_id,
+        )
+    )
 
 
 def is_barber_available(
@@ -338,7 +344,7 @@ def is_barber_available(
     barber: Barber,
     blocking_duration_minutes: int,
 ) -> bool:
-    return not occupied_block(db, slot_date, slot_time) and not occupied_appointment(
+    return not occupied_block(db, slot_date, slot_time, barber.id) and not occupied_appointment(
         db,
         slot_date,
         slot_time,
@@ -513,16 +519,19 @@ def cancel_appointment_by_token(db: Session, token: str) -> Appointment:
 
 def create_block(db: Session, payload: BlockCreate) -> BlockedSlot:
     validate_open_day(payload.date)
-    if payload.start_time not in {slot for barber in active_barbers(db) for slot in generate_slots(barber.appointment_interval_minutes)}:
+    barber = get_active_barber(db, payload.barber_id)
+    if payload.start_time not in generate_slots(barber.appointment_interval_minutes):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "El horario esta fuera de la atencion disponible.")
     if not is_future_slot(payload.date, payload.start_time):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "El horario seleccionado ya paso o no cumple con los 20 minutos minimos de anticipacion.",
         )
-    if occupied_block(db, payload.date, payload.start_time):
+    if occupied_block(db, payload.date, payload.start_time, barber.id):
         raise HTTPException(status.HTTP_409_CONFLICT, "El horario ya esta bloqueado.")
-    block = BlockedSlot(date=payload.date, start_time=payload.start_time, reason=payload.reason)
+    if occupied_appointment(db, payload.date, payload.start_time, barber.id, barber.appointment_interval_minutes):
+        raise HTTPException(status.HTTP_409_CONFLICT, "El horario ya tiene un turno registrado.")
+    block = BlockedSlot(barber_id=barber.id, date=payload.date, start_time=payload.start_time, reason=payload.reason)
     db.add(block)
     try:
         db.commit()
@@ -544,12 +553,15 @@ def delete_block(db: Session, block_id: int) -> None:
 def daily_agenda(db: Session, slot_date: date) -> list[AgendaSlot]:
     expire_pending_payments(db)
     barbers = active_barbers(db)
-    blocks = {item.start_time: item for item in db.scalars(select(BlockedSlot).where(BlockedSlot.date == slot_date)).all()}
+    blocks = {
+        (item.barber_id, item.start_time): item
+        for item in db.scalars(select(BlockedSlot).where(BlockedSlot.date == slot_date)).all()
+    }
     agenda: list[AgendaSlot] = []
     for barber in barbers:
         for slot in generate_slots(barber.appointment_interval_minutes):
             appointment = overlapping_appointment_at_slot(db, slot_date, slot, barber)
-            block = blocks.get(slot)
+            block = blocks.get((barber.id, slot))
             if appointment:
                 slot_status = "Pendiente de pago" if appointment.status == STATUS_PENDING_PAYMENT else "Reservado"
                 agenda.append(

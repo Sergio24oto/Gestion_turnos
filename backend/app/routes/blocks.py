@@ -12,7 +12,7 @@ router = APIRouter(prefix="/blocks", tags=["blocks"], dependencies=[Depends(requ
 @router.post("", response_model=BlockRead, status_code=201)
 def block_slot(payload: BlockCreate, db: Session = Depends(get_db)):
     block = create_block(db, payload)
-    return BlockRead(id=block.id, date=block.date, start_time=block.start_time, reason=block.reason)
+    return BlockRead(id=block.id, date=block.date, start_time=block.start_time, barber_id=block.barber_id, reason=block.reason)
 
 
 @router.delete("/{block_id}", status_code=status.HTTP_204_NO_CONTENT)

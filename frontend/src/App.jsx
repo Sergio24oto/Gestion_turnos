@@ -1021,7 +1021,7 @@ export default function App() {
   }
 
   async function blockSlot(slot) {
-    await api.blockSlot({ date: adminDate, start_time: slot.time, reason: "Bloqueado por administrador" });
+    await api.blockSlot({ date: adminDate, start_time: slot.time, barber_id: slot.barber_id, reason: "Bloqueado por administrador" });
     refreshAgenda();
   }
 
