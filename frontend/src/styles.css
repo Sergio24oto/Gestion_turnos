@@ -930,6 +930,25 @@ input, select { width: 100%; height: 48px; border-radius: 14px; border: 1px soli
 .agenda-row span {
   color: #D8C7B4;
 }
+.agenda-client {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.agenda-client-phone {
+  color: #F5EBDD;
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.agenda-client-phone:hover,
+.agenda-client-phone:focus-visible {
+  color: #C6A36A;
+}
+.agenda-client-phone-missing {
+  color: #B89F82;
+}
 .agenda-row .barber-label,
 .agenda-row .barber-label span {
   color: #F5EBDD;

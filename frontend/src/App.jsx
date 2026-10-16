@@ -1151,7 +1151,16 @@ export default function App() {
           <strong>{String(slot.time).slice(0, 5)}</strong>
           <span>{slot.appointment?.end_time ? String(slot.appointment.end_time).slice(0, 5) : "-"}</span>
           <span><BarberLabel barber={barber} name={slot.barber_name} /></span>
-          <span>{slot.appointment ? `${slot.appointment.client_first_name} ${slot.appointment.client_last_name}` : slot.status === "Bloqueado" ? "Horario bloqueado" : "Disponible"}</span>
+          <div className="agenda-client">
+            <span>{slot.appointment ? `${slot.appointment.client_first_name} ${slot.appointment.client_last_name}` : slot.status === "Bloqueado" ? "Horario bloqueado" : "Disponible"}</span>
+            {slot.appointment && (
+              slot.appointment.client_phone?.trim() ? (
+                <a className="agenda-client-phone" href={`tel:${normalizePhoneInput(slot.appointment.client_phone)}`}>
+                  Tel: {slot.appointment.client_phone}
+                </a>
+              ) : <small className="agenda-client-phone-missing">Sin teléfono registrado</small>
+            )}
+          </div>
           <span>{appointmentServiceLabel(slot.appointment)}</span>
           <span className={`status ${slot.status === "Libre" ? "free" : slot.status === "Bloqueado" ? "blocked" : "booked"}`}>{slot.appointment?.origin === "MANUAL" ? "Registrado manualmente" : slot.status}</span>
           <div className="row-actions">
